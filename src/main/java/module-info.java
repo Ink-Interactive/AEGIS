@@ -5,8 +5,9 @@ module atlanteshellsing.aegis {
 	requires java.compiler;
     requires java.xml;
 
-    opens atlanteshellsing.aegis to javafx.fxml;  // Allows FXML reflection
-    exports atlanteshellsing.aegis;               // Expose public API
+    opens atlanteshellsing.aegis.gui to javafx.fxml;
+    opens atlanteshellsing.aegis.components.gui to javafx.fxml;
+    exports atlanteshellsing.aegis;
     exports  atlanteshellsing.aegis.gui;
     exports atlanteshellsing.aegis.components.gui;
     exports atlanteshellsing.aegis.theme;

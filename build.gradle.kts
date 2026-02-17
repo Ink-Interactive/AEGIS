@@ -1,9 +1,11 @@
 import java.io.BufferedInputStream
+import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.api.tasks.JavaExec
 
 plugins {
-    id("application")
+    application
     id("org.openjfx.javafxplugin") version "0.1.0"
-    id("jacoco")
+    jacoco
 }
 
 group = "atlanteshellsing.aegis"
@@ -14,37 +16,44 @@ repositories {
 }
 
 val javafxVersion = "24.0.2"
+val mainModuleName = "atlanteshellsing.aegis"
+
+// ✅ Use ONE source of truth for FX modules (avoid javafx.modules.get() typing weirdness)
+val fxModules = listOf("javafx.controls", "javafx.fxml")
 
 dependencies {
+    // JavaFX
+    implementation("org.openjfx:javafx-controls:$javafxVersion")
+    implementation("org.openjfx:javafx-fxml:$javafxVersion")
+
+    // Tests
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    implementation("org.openjfx:javafx-controls:${javafxVersion}")
-    implementation("org.openjfx:javafx-fxml:${javafxVersion}")
 }
 
 javafx {
     version = javafxVersion
-    modules = listOf("javafx.controls", "javafx.fxml")
+    modules = fxModules
 }
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(23))
+        languageVersion.set(JavaLanguageVersion.of(25))
     }
 }
 
 jacoco {
-    toolVersion = "0.8.13"
+    toolVersion = "0.8.14"
 }
 
-tasks.test {
+tasks.named<Test>("test") {
     useJUnitPlatform()
-    finalizedBy(tasks.jacocoTestReport)
+    finalizedBy(tasks.named("jacocoTestReport"))
 }
 
-tasks.jacocoTestReport {
-    dependsOn(tasks.test) // tests must run first
+tasks.named<JacocoReport>("jacocoTestReport") {
+    dependsOn(tasks.named("test"))
 
     reports {
         xml.required.set(true)
@@ -52,20 +61,20 @@ tasks.jacocoTestReport {
         html.outputLocation.set(layout.buildDirectory.dir("jacocoHtml"))
     }
 
-    // Handle both Java and Kotlin outputs
     val classFiles = fileTree(layout.buildDirectory.dir("classes")) {
         include("**/*.class")
     }
+
     // Bytecode annotation descriptor (binary name)
     val excludeAnnotation = "Latlanteshellsing/aegis/assetations/ExcludeAsGenerated;"
-    // Efficiently skip annotated class files
+
     val filteredClasses = classFiles.matching {
-        exclude { it ->
+        exclude {
             val file = it.file
             if (!file.isFile || !file.name.endsWith(".class")) return@exclude false
-            // Read just enough bytes to detect the annotation
+
             BufferedInputStream(file.inputStream()).use { input ->
-                val buffer = ByteArray(4096) // 4 KB buffer
+                val buffer = ByteArray(4096)
                 var bytesRead: Int
                 while (input.read(buffer).also { bytesRead = it } != -1) {
                     val text = String(buffer, 0, bytesRead, Charsets.ISO_8859_1)
@@ -75,9 +84,41 @@ tasks.jacocoTestReport {
             false
         }
     }
+
     classDirectories.setFrom(files(filteredClasses))
 }
 
+tasks.register<JavaExec>("runAegis") {
+    group = "application"
+    description = "Run AEGIS (modular JavaFX) with correct module-path"
+
+    // deps (JavaFX, etc.)
+    classpath = sourceSets.main.get().runtimeClasspath
+
+    // run as module
+    mainModule.set(mainModuleName)
+    mainClass.set("atlanteshellsing.aegis.AEGISMainApplication")
+
+    modularity.inferModulePath.set(true)
+
+    // Explicit modules list (stable)
+    jvmArgs("--add-modules", fxModules.joinToString(","))
+
+    doFirst {
+        // Patch ONLY resources into the module so getResource() works
+        val resourcesDir = sourceSets.main.get().output.resourcesDir
+        requireNotNull(resourcesDir) { "No resourcesDir found for main sourceSet" }
+
+        jvmArgs("--patch-module", "$mainModuleName=${resourcesDir.absolutePath}")
+
+        // Optional: only enable native access if JavaFX graphics is present
+        if (classpath.files.any { it.name.startsWith("javafx-graphics") }) {
+            jvmArgs("--enable-native-access=javafx.graphics")
+        }
+    }
+}
+
 application {
+    mainModule.set(mainModuleName)
     mainClass.set("atlanteshellsing.aegis.AEGISMainApplication")
 }
