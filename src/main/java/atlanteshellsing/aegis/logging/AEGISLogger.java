@@ -143,23 +143,22 @@ public class AEGISLogger {
      * @param message the message text to record
      */
     public static void log(AEGISLogKey key, AEGISLogLevel level, String message) {
-        LogRecord logRec = new LogRecord(level.level, message);
-        logRec.setParameters(new Object[]{key, level});
-        AEGIS_LOGGER.log(logRec);
+        log(key, level, message, null);
     }
 
     /**
-     * Logs a message under the given AEGIS source key and severity, associating an exception with the entry.
+     * Logs a message under the given AEGIS source key and severity, optionally
+     * associating a Throwable (Exception, Error, etc.) with the entry.
      *
-     * @param key     the source of the log entry (e.g., AEGIS_MAIN, AEGIS_TOOL)
-     * @param level   the AEGISLogLevel that determines severity and console color
-     * @param message the log message text
-     * @param e       an exception to include with the log entry; may be null
+     * @param key      the source of the log entry (e.g., AEGIS_MAIN, AEGIS_TOOL)
+     * @param level    the AEGISLogLevel that determines severity and console color
+     * @param message  the log message text
+     * @param thrown   a Throwable to include with the log entry; may be null
      */
-    public static void log(AEGISLogKey key, AEGISLogLevel level, String message, Exception e) {
+    public static void log(AEGISLogKey key, AEGISLogLevel level, String message, Throwable thrown) {
         LogRecord logRec = new LogRecord(level.level, message);
-        logRec.setParameters(new Object[]{key, level});
-        logRec.setThrown(e);
+        logRec.setParameters(new Object[]{ key, level });
+        logRec.setThrown(thrown);
         AEGIS_LOGGER.log(logRec);
     }
 }
