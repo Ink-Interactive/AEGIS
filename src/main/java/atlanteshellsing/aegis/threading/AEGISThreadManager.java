@@ -166,10 +166,10 @@ public boolean isAllowCoreThreadTimeOut() { return allowCoreThreadTimeOut; }
     }
 
     public static final class AEGISThreadManagerConfig {
-        PoolConfig cpuPoolConfig;
-        PoolConfig ioPoolConfig;
-        Duration completedTaskRetention;
-        Duration cleanupInterval;
+        private final PoolConfig cpuPoolConfig;
+        private final PoolConfig ioPoolConfig;
+        private final Duration completedTaskRetention;
+        private final Duration cleanupInterval;
 
         /**
          * Creates a new thread manager configuration with separate CPU and IO pool settings and cleanup timings.
@@ -781,12 +781,13 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
                 "Submitting async task: " + handle.name + " (" + id + ") owner=" + handle.owner + " pool=" + poolType);
 
         try {
-            Future<T> future;
+            ThreadPoolExecutor executor;
             synchronized (LIFECYCLE_LOCK) {
                 ensureInitializedLocked();
-                future = executorFor(poolType).submit(wrapCallable(handle, task));
-                handle.future.set(future);
+                executor = executorFor(poolType);
             }
+            Future<T> future = executor.submit(wrapCallable(handle, task));
+            handle.future.set(future);
             return new AEGISTaskSubmission<>(id, future);
 
         } catch(RejectedExecutionException e) {
