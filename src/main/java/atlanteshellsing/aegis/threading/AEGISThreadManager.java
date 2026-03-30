@@ -370,7 +370,7 @@ public Future<T> getFuture() { return future; }
         private final int largestPoolSize;
         private final int activeThreadCount;
         private final int queuedTaskCount;
-        private final int queueRemaningCapacity;
+        private final int queueRemainingCapacity;
         private final long poolCompletedTaskCount;
         private final long poolScheduledTaskCount;
 
@@ -384,11 +384,11 @@ public Future<T> getFuture() { return future; }
          * @param largestPoolSize        largest number of threads the pool has ever contained
          * @param activeThreadCount      number of threads currently executing tasks
          * @param queuedTaskCount        number of tasks currently queued
-         * @param queueRemaningCapacity  remaining capacity of the pool's work queue
+         * @param queueRemainingCapacity  remaining capacity of the pool's work queue
          * @param poolCompletedTaskCount number of tasks the pool has completed
          * @param poolScheduledTaskCount total number of tasks scheduled/submitted to the manager
          */
-        private PoolMetrics(PoolType poolType, int corePoolSize, int maximumPoolSize, int currentPoolSize, int largestPoolSize, int activeThreadCount, int queuedTaskCount, int queueRemaningCapacity, long poolCompletedTaskCount, long poolScheduledTaskCount) {
+        private PoolMetrics(PoolType poolType, int corePoolSize, int maximumPoolSize, int currentPoolSize, int largestPoolSize, int activeThreadCount, int queuedTaskCount, int queueRemainingCapacity, long poolCompletedTaskCount, long poolScheduledTaskCount) {
             this.poolType = poolType;
             this.corePoolSize = corePoolSize;
             this.maximumPoolSize = maximumPoolSize;
@@ -396,7 +396,7 @@ public Future<T> getFuture() { return future; }
             this.largestPoolSize = largestPoolSize;
             this.activeThreadCount = activeThreadCount;
             this.queuedTaskCount = queuedTaskCount;
-            this.queueRemaningCapacity = queueRemaningCapacity;
+            this.queueRemainingCapacity = queueRemainingCapacity;
             this.poolCompletedTaskCount = poolCompletedTaskCount;
             this.poolScheduledTaskCount = poolScheduledTaskCount;
 
@@ -449,7 +449,7 @@ public int getQueuedTaskCount() { return queuedTaskCount; }
  *
  * @return the number of additional tasks that can be accepted by the queue before it becomes full
  */
-public int getQueueRemaningCapacity() { return queueRemaningCapacity; }
+        public int getQueueRemainingCapacity() { return queueRemainingCapacity; }
         /**
  * Retrieves the number of tasks completed by this pool.
  *
@@ -682,7 +682,7 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
     private static volatile ThreadPoolExecutor cpuPool;
     private static volatile ThreadPoolExecutor ioPool;
     private static volatile ScheduledExecutorService cleanupExecutor;
-    private static volatile boolean intialized;
+    private static volatile boolean initialized;
 
     /**
      * Prevents instantiation of this utility class.
@@ -707,9 +707,9 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
         Objects.requireNonNull(newConfig, "config cannot be null");
 
         synchronized (LIFECYCLE_LOCK) {
-            if (intialized && hasLiveTasks()) throw new IllegalStateException("Cannot reconfigure AEGISThreadManager while tasks are active. Shut it down or wait for idle state first.");
+            if (initialized && hasLiveTasks()) throw new IllegalStateException("Cannot reconfigure AEGISThreadManager while tasks are active. Shut it down or wait for idle state first.");
 
-            if(intialized) shutdownInternal(Duration.ofSeconds(10));
+            if(initialized) shutdownInternal(Duration.ofSeconds(10));
 
             config = newConfig;
             intializedLocked();
@@ -931,7 +931,7 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
                 executor.getQueue().size(),
                 executor.getQueue().remainingCapacity(),
                 executor.getCompletedTaskCount(),
-                TOTAL_SUBMITTED.sum()
+                executor.getTaskCount()
         );
     }
 
@@ -991,7 +991,7 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
         Objects.requireNonNull(timeout, "timeout cannot be null");
 
         synchronized (LIFECYCLE_LOCK) {
-            if(!intialized) return;
+            if(!initialized) return;
             shutdownInternal(timeout);
         }
     }
@@ -1042,7 +1042,7 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
             if(cpuPool != null) cpuPool.shutdownNow();
             if(ioPool != null) ioPool.shutdownNow();
         } finally {
-            intialized = false;
+            initialized = false;
         }
     }
 
@@ -1094,7 +1094,7 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
                 TimeUnit.MILLISECONDS
         );
 
-        intialized = true;
+        initialized = true;
     }
 
     /**
@@ -1141,7 +1141,7 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
                 } else if (handle.state.get() == TaskState.CANCELLED) {
                     AEGISLogger.log(
                             AEGISLogger.AEGISLogKey.AEGIS_MAIN,
-                            AEGISLogger.AEGISLogLevel.SEVERE,
+                            AEGISLogger.AEGISLogLevel.INFO,
                             "Task acknowledged cancellation: " + handle.name + " (" + handle.id + ")"
                     );
                 }

@@ -17,8 +17,6 @@ repositories {
 
 val javafxVersion = "24.0.2"
 val mainModuleName = "atlanteshellsing.aegis"
-
-// ✅ Use ONE source of truth for FX modules (avoid javafx.modules.get() typing weirdness)
 val fxModules = listOf("javafx.controls", "javafx.fxml")
 
 dependencies {
@@ -66,7 +64,7 @@ tasks.named<JacocoReport>("jacocoTestReport") {
     }
 
     // Bytecode annotation descriptor (binary name)
-    val excludeAnnotation = "Latlanteshellsing/aegis/assetations/ExcludeAsGenerated;"
+    val excludeAnnotation = "Latlanteshellsing/aegis/annotations/ExcludeAsGenerated;"
 
     val filteredClasses = classFiles.matching {
         exclude {
