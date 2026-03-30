@@ -17,4 +17,5 @@ import java.lang.annotation.*;
  */
 @Retention(RetentionPolicy.CLASS) // no runtime overhead needed
 @Target({ElementType.TYPE, ElementType.METHOD, ElementType.CONSTRUCTOR})
+@ExcludeAsGenerated
 public @interface ExcludeAsGenerated {}
