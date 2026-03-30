@@ -712,7 +712,7 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
             if(initialized) shutdownInternal(Duration.ofSeconds(10));
 
             config = newConfig;
-            intializedLocked();
+            initializeLocked();
         }
     }
 
@@ -1061,7 +1061,7 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
      * If the manager is not initialized, initializes internal executors and scheduled cleanup.
      */
     private static void ensureInitializedLocked() {
-        if(!intialized) intializedLocked();
+        if(!initialized) initializeLocked();
     }
 
     /**
@@ -1072,7 +1072,7 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
      * thrown by the cleanup task are caught and logged. After creating the executors and scheduling
      * the cleanup task, this method marks the manager as initialized.
      */
-    private static void intializedLocked() {
+    private static void initializeLocked() {
         cpuPool = createExecutor(config.getCpuPoolConfig(), "AEGIS-CPU");
         ioPool = createExecutor(config.getIoPoolConfig(), "AEGIS-IO");
         cleanupExecutor = Executors.newSingleThreadScheduledExecutor(new AEGISThreadFactory("AEGIS-Cleanup", true, null));
@@ -1125,7 +1125,7 @@ public long getTotalCleanedUpTaskCount() { return totalCleanedUpTaskCount; }
                     TOTAL_COMPLETED.increment();
                 }
                 return result;
-            } catch (Exception e) {
+            } catch (Throwable  e) {
                 Instant failedAt = Instant.now();
                 handle.lastRunAt.set(failedAt);
                 handle.completedAt.compareAndSet(null, failedAt);
