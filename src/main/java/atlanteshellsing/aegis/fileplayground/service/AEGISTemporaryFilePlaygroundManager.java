@@ -4,6 +4,7 @@ import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundSessio
 import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundState;
 
 import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -20,7 +21,7 @@ import java.util.*;import java.util.stream.Collectors;
 public class AEGISTemporaryFilePlaygroundManager {
 
     private final Path playgroundRoot;
-    public final Map<UUID, TemporaryFilePlaygroundSession> sessions;
+    private final Map<UUID, TemporaryFilePlaygroundSession> sessions;
 
     /**
      * Creates a manager using the provided playground root.
@@ -48,9 +49,11 @@ public class AEGISTemporaryFilePlaygroundManager {
                 String sessionId = UUID.randomUUID().toString();
                 Path sessionPath = playgroundRoot.resolve(sessionId);
 
-                if(Files.exists(sessionPath)) {
-                    continue;
-                }
+               try {
+                   Files.createDirectory(sessionPath);
+               } catch (FileAlreadyExistsException e) {
+                   continue;
+               }
 
                 Files.createDirectory(sessionPath);
 
