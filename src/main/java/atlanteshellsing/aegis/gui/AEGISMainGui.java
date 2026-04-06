@@ -1,26 +1,34 @@
 package atlanteshellsing.aegis.gui;
 
+import atlanteshellsing.aegis.annotations.ExcludeAsGenerated;
 import atlanteshellsing.aegis.components.gui.AEGISTabPane;
+import atlanteshellsing.aegis.fileplayground.gui.TemporaryFilePlaygroundPanel;
+import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundSession;
+import atlanteshellsing.aegis.fileplayground.service.AEGISTemporaryFilePlaygroundManager;
+import atlanteshellsing.aegis.logging.AEGISLogger;
+import atlanteshellsing.aegis.structure.AEGISConfigurationManager;
 import atlanteshellsing.aegis.theme.AEGISThemeManager;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.control.Label;
-import javafx.scene.control.Menu;
-import javafx.scene.control.MenuBar;
-import javafx.scene.control.MenuItem;
+import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 
+import java.nio.file.Path;
+
+@ExcludeAsGenerated
 public class AEGISMainGui {
 
     private final BorderPane pane;
     private final MenuBar menuBar;
     private final AEGISTabPane tabPane;
+    private final AEGISTemporaryFilePlaygroundManager playgroundManager;
 
     public AEGISMainGui() {
         pane = new BorderPane();
         menuBar = new MenuBar();
         tabPane = new AEGISTabPane();
+        playgroundManager = new AEGISTemporaryFilePlaygroundManager(getPlaygroundRootPath());
 
         initMenuBar();
 
@@ -37,6 +45,11 @@ public class AEGISMainGui {
                 new MenuItem("Exit")
         );
 
+        Menu toolsMenu = new Menu("Tools");
+        MenuItem openTemporaryPlaground =  new MenuItem("Open Temporary File Plaground");
+        openTemporaryPlaground.setOnAction(action -> openTemporaryPlaground());
+        toolsMenu.getItems().addAll(openTemporaryPlaground);
+
         Menu viewMenu = new Menu("View");
         MenuItem toggleTheme = new MenuItem("Toggle Theme");
         toggleTheme.setOnAction(action -> AEGISThemeManager.toggleTheme(pane.getScene()));
@@ -45,7 +58,7 @@ public class AEGISMainGui {
         Menu helpMenu = new Menu("Help");
         helpMenu.getItems().add(new MenuItem("About"));
 
-        menuBar.getMenus().addAll(fileMenu, helpMenu, viewMenu);
+        menuBar.getMenus().addAll(fileMenu, toolsMenu, helpMenu, viewMenu);
 
         initHeader();
     }
@@ -73,6 +86,35 @@ public class AEGISMainGui {
         Scene scene = new Scene(pane, width, height);
         AEGISThemeManager.loadTheme(scene);
         return scene;
+    }
+
+    private void openTemporaryPlaground() {
+        try {
+            TemporaryFilePlaygroundSession session = playgroundManager.createSession();
+            String tabKey = "playground-" + session.id();
+            String title = "Playground " + session.id().toString().substring(0, 8);
+
+            TemporaryFilePlaygroundPanel panel = new TemporaryFilePlaygroundPanel(
+                    session,
+                    () -> tabPane.removeTab(tabKey)
+            );
+
+            tabPane.addTab(tabKey, title, panel);
+            tabPane.selectTab(tabKey);
+        } catch (IllegalStateException e) {
+            AEGISLogger.log(AEGISLogger.AEGISLogKey.AEGIS_TOOL, AEGISLogger.AEGISLogLevel.SEVERE, "Failed to open temporary playground", e);
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("Temporary File Playground");
+            alert.setHeaderText("Unable to open Temporary File Playground");
+            alert.setContentText(e.getMessage());
+            alert.showAndWait();
+        }
+    }
+
+    private static Path getPlaygroundRootPath() {
+        return AEGISConfigurationManager.userAppDataDir
+                .resolve("temp")
+                .resolve("file-playground");
     }
 
     public AEGISTabPane getMainTabPane() { return tabPane; }
