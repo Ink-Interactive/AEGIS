@@ -14,6 +14,7 @@ import javafx.scene.layout.VBox;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
@@ -159,8 +160,10 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
                     TemporaryFilePlaygroundPanel.this.getClass().getSimpleName(),
                     AEGISThreadManager.PoolType.IO_BOUND
             );
-        } catch (RejectedExecutionException e) {
+        } catch (RuntimeException e) {
             emptyStateLabel.setText("Unable to refresh workspace right now.");
+            emptyStateLabel.setVisible(true);
+            emptyStateLabel.setManaged(true);
             AEGISLogger.log(
                     AEGISLogger.AEGISLogKey.AEGIS_TOOL,
                     AEGISLogger.AEGISLogLevel.WARNING,
@@ -190,7 +193,7 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
         try (Stream<Path> stream = Files.list(path)) {
             children = stream
                     .sorted(Comparator
-                            .comparing((Path child) -> !Files.isDirectory(child))
+                            .comparing((Path child) -> !Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS))
                             .thenComparing(child -> child.getFileName().toString().toLowerCase()))
                     .toList();
         } catch (IOException e) {
@@ -205,12 +208,14 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
 
         return children.stream()
                 .map(child -> {
-                    boolean isDirectory = Files.isDirectory(child);
+                    boolean isDirectory = Files.isDirectory(child,  LinkOption.NOFOLLOW_LINKS);
+                    boolean isSymlink = Files.isSymbolicLink(child);
+
                     String displayName = child.getFileName() == null
                             ? child.toString()
                             : child.getFileName().toString();
                     String label = (isDirectory ? "📁 " : "📄 ") + displayName;
-                    List<WorkspaceNode> nestedChildren = isDirectory
+                    List<WorkspaceNode> nestedChildren = (isDirectory && !isSymlink)
                             ? readWorkspaceChildren(child)
                             : List.of();
 
