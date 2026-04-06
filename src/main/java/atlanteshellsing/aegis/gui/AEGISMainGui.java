@@ -46,9 +46,9 @@ public class AEGISMainGui {
         );
 
         Menu toolsMenu = new Menu("Tools");
-        MenuItem openTemporaryPlaground =  new MenuItem("Open Temporary File Plaground");
-        openTemporaryPlaground.setOnAction(action -> openTemporaryPlaground());
-        toolsMenu.getItems().addAll(openTemporaryPlaground);
+        MenuItem openTemporaryPlayground =  new MenuItem("Open Temporary File Playground");
+        openTemporaryPlayground.setOnAction(action -> openTemporaryPlayground());
+        toolsMenu.getItems().addAll(openTemporaryPlayground);
 
         Menu viewMenu = new Menu("View");
         MenuItem toggleTheme = new MenuItem("Toggle Theme");
@@ -88,7 +88,7 @@ public class AEGISMainGui {
         return scene;
     }
 
-    private void openTemporaryPlaground() {
+    private void openTemporaryPlayground() {
         try {
             TemporaryFilePlaygroundSession session = playgroundManager.createSession();
             String tabKey = "playground-" + session.id();

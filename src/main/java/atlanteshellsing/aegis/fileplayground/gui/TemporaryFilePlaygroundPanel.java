@@ -3,6 +3,8 @@ package atlanteshellsing.aegis.fileplayground.gui;
 import atlanteshellsing.aegis.annotations.ExcludeAsGenerated;
 import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundSession;
 import atlanteshellsing.aegis.logging.AEGISLogger;
+import atlanteshellsing.aegis.threading.AEGISThreadManager;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
@@ -10,11 +12,14 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 /**
@@ -26,7 +31,8 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
     private final TemporaryFilePlaygroundSession session;
     private final Runnable onCloseRequested;
     private final TreeView<String> treeView;
-    private final Label emptyStateLevel;
+    private final Label emptyStateLabel;
+    private final AtomicLong refreshRequestId;
 
     /**
      * Create a panel bound to an existing Temporary File Playground session.
@@ -38,7 +44,8 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
         this.session = Objects.requireNonNull(session, "session cannot be null");
         this.onCloseRequested = Objects.requireNonNull(onCloseRequested, "onCloseRequested cannot be null");
         this.treeView = new TreeView<>();
-        this.emptyStateLevel = new Label("This temporary workspace is empty. Create a file or folder to get started.");
+        this.emptyStateLabel = new Label("This temporary workspace is empty. Create a file or folder to get started.");
+        this.refreshRequestId = new AtomicLong(0);
 
         setPadding(new Insets(16));
 
@@ -47,7 +54,6 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
         setBottom(buildActionsControls());
 
         refreshContents();
-
     }
 
     private VBox buildHeader() {
@@ -84,9 +90,9 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
             }
         });
 
-        emptyStateLevel.setStyle("fx-font-style: italic; -fx-opacity: 0.75;");
+        emptyStateLabel.setStyle("-fx-font-style: italic; -fx-opacity: 0.75;");
 
-        VBox container = new VBox(8, treeView, emptyStateLevel);
+        VBox container = new VBox(8, treeView, emptyStateLabel);
         VBox.setVgrow(treeView, Priority.ALWAYS);
         return container;
     }
@@ -111,48 +117,107 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
     }
 
     private void refreshContents() {
-        TreeItem<String> root = buildTree(session.workspacePath());
-        treeView.setRoot(root);
+        long currentRefreshId = refreshRequestId.incrementAndGet();
+        emptyStateLabel.setText("Refreshing Workspace...");
+        emptyStateLabel.setVisible(true);
+        emptyStateLabel.setManaged(true);
 
-        boolean hasEntries = !root.getChildren().isEmpty();
-        emptyStateLevel.setVisible(!hasEntries);
-        emptyStateLevel.setManaged(!hasEntries);
+        try {
+            AEGISThreadManager.submitAsyncTask(
+                    "temporary-playground-refresh-" + session.id(),
+                    () -> {
+                        try {
+                            WorkspaceNode workspaceModel = buildWorkspaceModel(session.workspacePath());
+
+                            Platform.runLater(() -> {
+                               if(refreshRequestId.get() != currentRefreshId) return;
+
+                               TreeItem<String> root = buildTree(workspaceModel);
+                               treeView.setRoot(root);
+
+                               boolean hasEntries = !root.getChildren().isEmpty();
+                               emptyStateLabel.setText("This temporary workspace is empty. Create a file or folder to get started.");
+                               emptyStateLabel.setVisible(!hasEntries);
+                               emptyStateLabel.setManaged(!hasEntries);
+                            });
+                        } catch (RuntimeException e) {
+                            Platform.runLater(() -> {
+                               if(refreshRequestId.get() != currentRefreshId) return;
+                               emptyStateLabel.setText("Unable to refresh workspace right now.");
+                               emptyStateLabel.setVisible(true);
+                               emptyStateLabel.setManaged(true);
+                            });
+
+                            AEGISLogger.log(
+                                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                                    AEGISLogger.AEGISLogLevel.WARNING,
+                                    "Failed to refresh Temporary File Playground for session " + session.id(),
+                                    e
+                            );
+                        }
+                    },
+                    TemporaryFilePlaygroundPanel.this.getClass().getSimpleName(),
+                    AEGISThreadManager.PoolType.IO_BOUND
+            );
+        } catch (RejectedExecutionException e) {
+            emptyStateLabel.setText("Unable to refresh workspace right now.");
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                    AEGISLogger.AEGISLogLevel.WARNING,
+                    "Failed to queue Temporary File Playground refresh for session " + session.id(),
+                    e
+            );
+        }
     }
 
-    private TreeItem<String> buildTree(Path path) {
-        TreeItem<String> root = new TreeItem<>(path.toString());
-        populateChildren(root, path);
+    private TreeItem<String> buildTree(WorkspaceNode workspaceNode) {
+        TreeItem<String> root = new TreeItem<>(workspaceNode.label());
+        for(WorkspaceNode child : workspaceNode.children()) {
+            root.getChildren().add(buildTree(child));
+        }
         root.setExpanded(true);
         return root;
     }
 
-    private void populateChildren(TreeItem<String> parent, Path path) {
-        if(!Files.isDirectory(path)) return;
+    private WorkspaceNode buildWorkspaceModel(Path rootPath) {
+        return new WorkspaceNode(rootPath.toString(), readWorkspaceChildren(rootPath));
+    }
+
+    private List<WorkspaceNode> readWorkspaceChildren(Path path) {
+        if(!Files.isDirectory(path)) return List.of();
 
         List<Path> children;
-        try(Stream<Path> stream = Files.list(path)) {
-            children = stream.sorted(Comparator
+        try (Stream<Path> stream = Files.list(path)) {
+            children = stream
+                    .sorted(Comparator
                             .comparing((Path child) -> !Files.isDirectory(child))
                             .thenComparing(child -> child.getFileName().toString().toLowerCase()))
                     .toList();
-        } catch (Exception e) {
-            AEGISLogger.log(AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+        } catch (IOException e) {
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
                     AEGISLogger.AEGISLogLevel.WARNING,
-                    "Could not populate Temporary File Playground contents for session "
-                            + session.id() + " at path: " + path,
-                    e);
-            return;
+                    "Failed to read Temporary File Playground path: " + path,
+                    e
+            );
+            return List.of();
         }
 
-        for(Path child : children) {
-            boolean isDirectory = Files.isDirectory(child);
-            String displayName = child.getFileName() == null
-                    ? child.toString()
-                    : child.getFileName().toString();
-            TreeItem<String> childItem = new TreeItem<>((isDirectory ? "📁 " : "📄 ") + displayName);
-            parent.getChildren().add(childItem);
+        return children.stream()
+                .map(child -> {
+                    boolean isDirectory = Files.isDirectory(child);
+                    String displayName = child.getFileName() == null
+                            ? child.toString()
+                            : child.getFileName().toString();
+                    String label = (isDirectory ? "📁 " : "📄 ") + displayName;
+                    List<WorkspaceNode> nestedChildren = isDirectory
+                            ? readWorkspaceChildren(child)
+                            : List.of();
 
-            if(isDirectory) populateChildren(childItem, child);
-        }
+                    return new WorkspaceNode(label, nestedChildren);
+                })
+                .toList();
     }
+
+    private record WorkspaceNode(String label, List<WorkspaceNode> children) { }
 }
