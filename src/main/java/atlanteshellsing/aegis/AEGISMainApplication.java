@@ -2,11 +2,13 @@ package atlanteshellsing.aegis;
 
 import atlanteshellsing.aegis.gui.AEGISMainGui;
 import atlanteshellsing.aegis.structure.AEGISConfigurationManager;
+import atlanteshellsing.aegis.threading.AEGISThreadManager;
 import javafx.application.Application;
 import javafx.scene.image.Image;
 import javafx.stage.Stage;
 
 import java.net.URL;
+import java.time.Duration;
 
 public class AEGISMainApplication extends Application {
 
@@ -15,7 +17,30 @@ public class AEGISMainApplication extends Application {
 
     @Override
     public void init() {
+
         logo = loadImage("/images/AEGIS.png");
+
+        AEGISThreadManager.configure(
+                new AEGISThreadManager.AEGISThreadManagerConfig(
+                        AEGISThreadManager.PoolConfig.fixedPool(
+                                Runtime.getRuntime().availableProcessors(),
+                                AEGISThreadManager.QueueType.ARRAY_BLOCKING,
+                                128,
+                                AEGISThreadManager.RejectionPolicy.CALLER_RUNS
+                        ),
+                        AEGISThreadManager.PoolConfig.scalingPool(
+                                8,
+                                32,
+                                Duration.ofSeconds(60),
+                                AEGISThreadManager.QueueType.LINKED_BLOCKING,
+                                512,
+                                AEGISThreadManager.RejectionPolicy.CALLER_RUNS,
+                                true
+                        ),
+                        Duration.ofMinutes(5),
+                        Duration.ofSeconds(30)
+                )
+        );
     }
 
     @Override
