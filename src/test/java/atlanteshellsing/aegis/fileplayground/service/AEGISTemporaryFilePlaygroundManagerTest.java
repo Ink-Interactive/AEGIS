@@ -2,7 +2,6 @@ package atlanteshellsing.aegis.fileplayground.service;
 
 import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundSession;
 import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundState;
-import atlanteshellsing.aegis.fileplayground.service.AEGISTemporaryFilePlaygroundManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

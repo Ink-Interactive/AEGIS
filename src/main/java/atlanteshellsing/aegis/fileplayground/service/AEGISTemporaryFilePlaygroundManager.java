@@ -45,29 +45,21 @@ public class AEGISTemporaryFilePlaygroundManager {
         try {
             Files.createDirectories(playgroundRoot);
 
-            while(true) {
-                String sessionId = UUID.randomUUID().toString();
-                Path sessionPath = playgroundRoot.resolve(sessionId);
+            UUID sessionId = UUID.randomUUID();
+            Path sessionPath = Files.createTempDirectory(playgroundRoot, sessionId + "-")
+                    .toAbsolutePath()
+                    .normalize();
 
-               try {
-                   Files.createDirectory(sessionPath);
-               } catch (FileAlreadyExistsException e) {
-                   continue;
-               }
+            TemporaryFilePlaygroundSession session = new TemporaryFilePlaygroundSession(
+                    sessionId,
+                    sessionPath,
+                    Instant.now(),
+                    TemporaryFilePlaygroundState.OPEN
+            );
 
-                Files.createDirectory(sessionPath);
+            sessions.put(session.id(), session);
+            return session;
 
-                TemporaryFilePlaygroundSession session = new TemporaryFilePlaygroundSession(
-                        UUID.fromString(sessionId),
-                        sessionPath.toAbsolutePath().normalize(),
-                        Instant.now(),
-                        TemporaryFilePlaygroundState.OPEN
-                );
-
-                sessions.put(session.id(), session);
-                return session;
-
-            }
         } catch (IOException e) {
             throw new IllegalStateException("Failed to create temporary file playground session", e);
         }
