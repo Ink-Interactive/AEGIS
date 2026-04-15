@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -119,5 +120,103 @@ class AEGISTemporaryFilePlaygroundManagerTest {
         AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
 
         assertEquals(root.toAbsolutePath().normalize(), manager.getPlaygroundRoot());
+    }
+
+    @Test
+    void createFileShouldCreateFileInSessionWorkspace() {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+
+        Path created = manager.createFile(session.id(), "notes.txt");
+
+        assertEquals(session.workspacePath().resolve("notes.txt"), created);
+        assertTrue(Files.isRegularFile(created));
+    }
+
+    @Test
+    void createFolderShouldCreateFolderInSessionWorkspace() {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+
+        Path created = manager.createFolder(session.id(), "docs");
+
+        assertEquals(session.workspacePath().resolve("docs"), created);
+        assertTrue(Files.isDirectory(created));
+    }
+
+    @Test
+    void createFileShouldCreateInsideProvidedFolder() {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+        Path folder = manager.createFolder(session.id(), "docs");
+
+        Path created = manager.createFile(session.id(), folder, "nested.txt");
+
+        assertEquals(folder.resolve("nested.txt"), created);
+        assertTrue(Files.isRegularFile(created));
+    }
+
+    @Test
+    void createFileShouldRejectBlankName() {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> manager.createFile(session.id(), "   "));
+
+        assertEquals("File name cannot be blank", exception.getMessage());
+    }
+
+    @Test
+    void createFileShouldRejectDuplicateName() {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+        manager.createFile(session.id(), "notes.txt");
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> manager.createFile(session.id(), "notes.txt"));
+
+        assertEquals("'notes.txt' already exists", exception.getMessage());
+    }
+
+    @Test
+    void createFileShouldRejectNameContainingPathSeparator() {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> manager.createFile(session.id(), "foo/bar.txt"));
+
+        assertEquals("File name cannot contain path separators", exception.getMessage());
+    }
+
+    @Test
+    void createFileShouldRejectUnknownSessionId() {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> manager.createFile(UUID.randomUUID(), "notes.txt"));
+
+        assertTrue(exception.getMessage().startsWith("Temporary playground session not found:"));
+    }
+
+    @Test
+    void createFolderShouldRejectDirectoryOutsideWorkspace() {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+        Path outside = tempDir.resolve("outside");
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> manager.createFolder(session.id(), outside, "docs"));
+
+        assertEquals("Target directory must be inside the workspace", exception.getMessage());
     }
 }
