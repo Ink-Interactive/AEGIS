@@ -66,14 +66,18 @@ public class AEGISTemporaryFilePlaygroundManager {
     }
 
     /**
-     * Returns a tracked session by ID, or null if not found.
+     * Returns a tracked session by ID, or throws an IllegalArgumentException if not found.
      *
      * @param sessionId the session ID
-     * @return the session or null
+     * @return the session or an IllegalArgumentException
      */
     public synchronized TemporaryFilePlaygroundSession getSession(UUID sessionId) {
         Objects.requireNonNull(sessionId, "sessionId cannot be null");
-        return sessions.get(sessionId);
+        TemporaryFilePlaygroundSession session = sessions.get(sessionId);
+        if(session == null) {
+            throw new IllegalArgumentException("Temporary playground session not found: " + sessionId);
+        }
+        return session;
     }
 
     /**
@@ -105,10 +109,99 @@ public class AEGISTemporaryFilePlaygroundManager {
     }
 
     /**
+     * Creates a file inside the given session workspace.
+     *
+     * @param sessionId session to create the file in
+     * @param fileName  file name (not a nested path)
+     * @return created file path
+     */
+    public synchronized Path createFile(UUID sessionId, String fileName) {
+        return createFile(sessionId, null, fileName);
+    }
+
+    /**
+     * Creates a file inside the given session workspace (or inside the provided parent directory).
+     *
+     * @param sessionId       session to create the file in
+     * @param parentDirectory optional target directory inside the workspace (null uses workspace root)
+     * @param fileName        file name (not a nested path)
+     * @return created file path
+     */
+    public synchronized Path createFile(UUID sessionId, Path parentDirectory, String fileName) {
+        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        Path targetDirectory = resolveTargetDirectory(session.workspacePath(), parentDirectory);
+        String sanitizedName = validateChildName(targetDirectory, fileName, "File name");
+        Path filePath = targetDirectory.resolve(sanitizedName).normalize();
+
+        try {
+            return Files.createFile(filePath);
+        } catch (IOException e) {
+            throw new IllegalStateException("Unable to create file '" + sanitizedName + "'", e);
+        }
+    }
+
+    /**
+     * Creates a folder inside the given session workspace.
+     *
+     * @param sessionId   session to create the folder in
+     * @param folderName  folder name (not a nested path)
+     * @return created folder path
+     */
+    public synchronized Path createFolder(UUID sessionId, String folderName) {
+        return createFolder(sessionId, null, folderName);
+    }
+
+    /**
+     * Creates a folder inside the given session workspace (or inside the provided parent directory).
+     *
+     * @param sessionId       session to create the folder in
+     * @param parentDirectory optional target directory inside the workspace (null uses workspace root)
+     * @param folderName      folder name (not a nested path)
+     * @return created folder path
+     */
+    public synchronized Path createFolder(UUID sessionId, Path parentDirectory, String folderName) {
+        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        Path targetDirectory = resolveTargetDirectory(session.workspacePath(), parentDirectory);
+        String sanitizedName = validateChildName(targetDirectory, folderName, "Folder name");
+        Path folderPath = targetDirectory.resolve(sanitizedName).normalize();
+
+        try {
+            return Files.createDirectory(folderPath);
+        } catch (IOException e) {
+            throw new IllegalStateException("Unable to create folder '" + sanitizedName + "'", e);
+        }
+    }
+
+    private String validateChildName(Path workspacePath, String value, String fieldName) {
+        if(value == null) throw new IllegalArgumentException(fieldName + " cannot be null");
+
+        String trimmed = value.trim();
+        if(trimmed.isBlank()) throw new IllegalArgumentException(fieldName + " cannot be blank");
+
+        if(trimmed.contains("/") || trimmed.contains("\\")) throw new IllegalArgumentException(fieldName + " cannot contain path separators");
+
+        Path target = workspacePath.resolve(trimmed).normalize();
+        if(Files.exists(target)) throw new IllegalArgumentException("'" + trimmed + "' already exists");
+
+        return trimmed;
+    }
+
+    private Path resolveTargetDirectory(Path workspacePath, Path parentDirectory) {
+        Path candidate = parentDirectory == null
+                ? workspacePath
+                : parentDirectory.toAbsolutePath().normalize();
+
+        if(!candidate.startsWith(workspacePath)) throw new IllegalArgumentException("Target directory must be inside the workspace");
+
+        if(!Files.exists(candidate) || !Files.isDirectory(candidate)) throw new IllegalArgumentException("Target directory does not exist or is not a directory");
+
+        return candidate;
+    }
+
+    /**
      * Returns the normalized absolute playground root path.
      *
      * @return playground root
      */
     public Path getPlaygroundRoot() { return playgroundRoot; }
-
 }

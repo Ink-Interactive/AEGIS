@@ -2,6 +2,7 @@ package atlanteshellsing.aegis.fileplayground.gui;
 
 import atlanteshellsing.aegis.annotations.ExcludeAsGenerated;
 import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundSession;
+import atlanteshellsing.aegis.fileplayground.service.AEGISTemporaryFilePlaygroundManager;
 import atlanteshellsing.aegis.logging.AEGISLogger;
 import atlanteshellsing.aegis.threading.AEGISThreadManager;
 import javafx.application.Platform;
@@ -29,19 +30,22 @@ import java.util.stream.Stream;
 @ExcludeAsGenerated
 public class TemporaryFilePlaygroundPanel extends BorderPane {
 
+    private final AEGISTemporaryFilePlaygroundManager manager;
     private final TemporaryFilePlaygroundSession session;
     private final Runnable onCloseRequested;
-    private final TreeView<String> treeView;
+    private final TreeView<WorkspaceTreeEntry> treeView;
     private final Label emptyStateLabel;
     private final AtomicLong refreshRequestId;
 
     /**
      * Create a panel bound to an existing Temporary File Playground session.
      *
+     * @param manager          manager used for file/folder creation actions
      * @param session          existing session to display
      * @param onCloseRequested callback for close action button
      */
-    public TemporaryFilePlaygroundPanel(TemporaryFilePlaygroundSession session, Runnable onCloseRequested) {
+    public TemporaryFilePlaygroundPanel(AEGISTemporaryFilePlaygroundManager manager, TemporaryFilePlaygroundSession session, Runnable onCloseRequested) {
+        this.manager = Objects.requireNonNull(manager, "manager cannot be null");
         this.session = Objects.requireNonNull(session, "session cannot be null");
         this.onCloseRequested = Objects.requireNonNull(onCloseRequested, "onCloseRequested cannot be null");
         this.treeView = new TreeView<>();
@@ -81,13 +85,13 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
         treeView.setShowRoot(false);
         treeView.setCellFactory(view -> new TreeCell<>() {
             @Override
-            protected void updateItem(String item, boolean empty) {
+            protected void updateItem(WorkspaceTreeEntry item, boolean empty) {
                 super.updateItem(item, empty);
                 if(empty || item == null) {
                     setText(null);
                     return;
                 }
-                setText(item);
+                setText(item.label());
             }
         });
 
@@ -106,15 +110,78 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
         Button closePlayground = new Button("Close Playground");
 
         openInExplorer.setDisable(true);
-        newFile.setDisable(true);
-        newFolder.setDisable(true);
         deleteSelected.setDisable(true);
 
+        newFile.setOnAction(action -> onCreateFileRequested());
+        newFolder.setOnAction(action -> onCreateFolderRequested());
         closePlayground.setOnAction(action -> onCloseRequested.run());
 
         HBox actions = new HBox(8, openInExplorer, newFile, newFolder, deleteSelected, closePlayground);
         actions.setPadding(new Insets(12, 0, 0, 0));
         return actions;
+    }
+
+    private void onCreateFileRequested() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Temporary File Playground");
+        dialog.setHeaderText("Create New File");
+        dialog.setContentText("File Name:");
+
+        dialog.showAndWait().ifPresent(name -> {
+            try {
+                manager.createFile(session.id(), getSelectedTargetDirectory(), name);
+                refreshContents();
+            } catch (IllegalStateException | IllegalArgumentException e) {
+                AEGISLogger.log(
+                        AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                        AEGISLogger.AEGISLogLevel.WARNING,
+                        "Failed to create file in Temporary File Playground for session " + session.id(),
+                        e
+                );
+                showErrorAlert("Cannot Create File", e.getMessage());
+            }
+        });
+    }
+
+    private void onCreateFolderRequested() {
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.setTitle("Temporary File Playground");
+        dialog.setHeaderText("Create New Folder");
+        dialog.setContentText("Folder name:");
+
+        dialog.showAndWait().ifPresent(name -> {
+           try {
+                manager.createFolder(session.id(), getSelectedTargetDirectory(), name);
+                refreshContents();
+              } catch (IllegalStateException | IllegalArgumentException e) {
+                AEGISLogger.log(
+                          AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                          AEGISLogger.AEGISLogLevel.WARNING,
+                          "Failed to create folder in Temporary File Playground for session " + session.id(),
+                          e
+                );
+                showErrorAlert("Cannot Create Folder", e.getMessage());
+           }
+        });
+    }
+
+    private void showErrorAlert(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle("Temporary File Playground");
+        alert.setHeaderText(title);
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+    private Path getSelectedTargetDirectory() {
+        TreeItem<WorkspaceTreeEntry> selected = treeView.getSelectionModel().getSelectedItem();
+        if (selected == null || selected.getValue() == null) return session.workspacePath();
+
+        WorkspaceTreeEntry entry = selected.getValue();
+        if(entry.isDirectory()) return entry.path();
+
+        Path parent = entry.path().getParent();
+        return parent == null ? session.workspacePath() : parent;
     }
 
     private void refreshContents() {
@@ -133,7 +200,7 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
                             Platform.runLater(() -> {
                                if(refreshRequestId.get() != currentRefreshId) return;
 
-                               TreeItem<String> root = buildTree(workspaceModel);
+                               TreeItem<WorkspaceTreeEntry> root = buildTree(workspaceModel);
                                treeView.setRoot(root);
 
                                boolean hasEntries = !root.getChildren().isEmpty();
@@ -173,8 +240,12 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
         }
     }
 
-    private TreeItem<String> buildTree(WorkspaceNode workspaceNode) {
-        TreeItem<String> root = new TreeItem<>(workspaceNode.label());
+    private TreeItem<WorkspaceTreeEntry> buildTree(WorkspaceNode workspaceNode) {
+        TreeItem<WorkspaceTreeEntry> root = new TreeItem<>(new WorkspaceTreeEntry(
+                workspaceNode.label(),
+                workspaceNode.path(),
+                workspaceNode.directory()
+        ));
         for(WorkspaceNode child : workspaceNode.children()) {
             root.getChildren().add(buildTree(child));
         }
@@ -183,7 +254,7 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
     }
 
     private WorkspaceNode buildWorkspaceModel(Path rootPath) {
-        return new WorkspaceNode(rootPath.toString(), readWorkspaceChildren(rootPath));
+        return new WorkspaceNode(rootPath.toString(), rootPath, true, readWorkspaceChildren(rootPath));
     }
 
     private List<WorkspaceNode> readWorkspaceChildren(Path path) {
@@ -219,10 +290,11 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
                             ? readWorkspaceChildren(child)
                             : List.of();
 
-                    return new WorkspaceNode(label, nestedChildren);
+                    return new WorkspaceNode(label, child, isDirectory, nestedChildren);
                 })
                 .toList();
     }
 
-    private record WorkspaceNode(String label, List<WorkspaceNode> children) { }
+    private record WorkspaceNode(String label, Path path, boolean directory, List<WorkspaceNode> children) { }
+    private record WorkspaceTreeEntry(String label, Path path, boolean isDirectory) { }
 }

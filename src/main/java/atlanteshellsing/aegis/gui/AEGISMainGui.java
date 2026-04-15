@@ -95,6 +95,7 @@ public class AEGISMainGui {
             String title = "Playground " + session.id().toString().substring(0, 8);
 
             TemporaryFilePlaygroundPanel panel = new TemporaryFilePlaygroundPanel(
+                    playgroundManager,
                     session,
                     () -> tabPane.removeTab(tabKey)
             );
