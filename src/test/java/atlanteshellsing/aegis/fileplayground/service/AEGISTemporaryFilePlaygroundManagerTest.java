@@ -213,6 +213,11 @@ class AEGISTemporaryFilePlaygroundManagerTest {
         AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
         TemporaryFilePlaygroundSession session = manager.createSession();
         Path outside = tempDir.resolve("outside");
+        try {
+            Files.createDirectories(outside);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
                 () -> manager.createFolder(session.id(), outside, "docs"));
