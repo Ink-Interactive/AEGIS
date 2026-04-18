@@ -4,9 +4,8 @@ import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundSessio
 import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundState;
 
 import java.io.IOException;
-import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.*;import java.util.stream.Collectors;
 
@@ -172,6 +171,39 @@ public class AEGISTemporaryFilePlaygroundManager {
         }
     }
 
+    /**
+     * Imports dropped files/folders into the session workspace.
+     *
+     * @param sessionId   target session
+     * @param paths dropped files/folders to copy
+     */
+    public synchronized void importPaths(UUID sessionId, List<Path> paths) {
+        TemporaryFilePlaygroundSession session = getSession(sessionId);
+
+        if(paths == null || paths.isEmpty()) {
+            throw new IllegalArgumentException("No Files or Folders to import.");
+        }
+
+        Path workspacePath = session.workspacePath();
+        for(Path path : paths) {
+            if(path == null) throw new  IllegalArgumentException("Dropped Item cannot be null.");
+
+            Path normalizedPath = path.toAbsolutePath().normalize();
+            Path fileName = normalizedPath.getFileName();
+            if(fileName == null) throw new  IllegalArgumentException("Dropped Item has no valid name" + normalizedPath);
+            if(!Files.exists(normalizedPath)) throw new IllegalArgumentException("Dropped Item does not exist: " + normalizedPath);
+
+            Path targetPath = workspacePath.resolve(fileName).normalize();
+            if(Files.exists(targetPath)) throw new IllegalArgumentException("Dropped Item already exists: " + targetPath);
+
+            try {
+                copyPath(normalizedPath, targetPath);
+            } catch (IOException e) {
+                throw new IllegalStateException("Unable to import '" + fileName + "' into workspace" , e);
+            }
+        }
+    }
+
     private String validateChildName(Path workspacePath, String value, String fieldName) {
         if(value == null) throw new IllegalArgumentException(fieldName + " cannot be null");
 
@@ -196,6 +228,33 @@ public class AEGISTemporaryFilePlaygroundManager {
         if(!Files.exists(candidate) || !Files.isDirectory(candidate)) throw new IllegalArgumentException("Target directory does not exist or is not a directory");
 
         return candidate;
+    }
+
+    private void copyPath(Path source, Path target) throws IOException {
+        if(Files.isDirectory(source)) {
+            Files.walkFileTree(source, new SimpleFileVisitor<>() {
+
+                @Override
+                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                    Path relative = source.relativize(dir);
+                    Path destination = target.resolve(relative);
+                    Files.copy(dir, destination, StandardCopyOption.COPY_ATTRIBUTES);
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                    Path relative = source.relativize(file);
+                    Path destination = target.resolve(relative);
+                    Files.copy(file, destination, StandardCopyOption.COPY_ATTRIBUTES);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+
+            return;
+        }
+
+        Files.copy(source, target, StandardCopyOption.COPY_ATTRIBUTES);
     }
 
     /**
