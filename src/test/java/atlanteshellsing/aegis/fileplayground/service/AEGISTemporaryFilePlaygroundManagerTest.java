@@ -288,7 +288,8 @@ class AEGISTemporaryFilePlaygroundManagerTest {
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
                 () -> manager.importPaths(session.id(), List.of(source)));
 
-        assertEquals("Dropped Item already exists: " + session.workspacePath() + "\\dupe.txt", exception.getMessage());
+        Path expectedTarget = session.workspacePath().resolve("dupe.txt").normalize();
+        assertEquals("Dropped Item already exists: " + expectedTarget, exception.getMessage());
     }
 
     @Test
