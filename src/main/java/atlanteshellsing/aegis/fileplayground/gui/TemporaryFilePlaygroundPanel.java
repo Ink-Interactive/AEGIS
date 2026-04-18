@@ -8,11 +8,11 @@ import atlanteshellsing.aegis.threading.AEGISThreadManager;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.VBox;
+import javafx.scene.input.DragEvent;
+import javafx.scene.input.TransferMode;
+import javafx.scene.layout.*;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -20,7 +20,6 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
@@ -36,6 +35,10 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
     private final TreeView<WorkspaceTreeEntry> treeView;
     private final Label emptyStateLabel;
     private final AtomicLong refreshRequestId;
+    private Region workspaceDropTarget;
+    private static final String TEMPORARY_FILE_PLAYGROUND = "Temporary File Playground";
+    private static final String DROP_IDLE_STYLE = "";
+    private static final String DROP_ACTIVE_STYLE = "-fx-border-color: #4DA3FF; -fx-border-width: 2; -fx-border-radius: 6; -fx-background-color: rgba(77, 163, 255, 0.10);";
 
     /**
      * Create a panel bound to an existing Temporary File Playground session.
@@ -62,7 +65,7 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
     }
 
     private VBox buildHeader() {
-        Label title = new Label("Temporary File Playground");
+        Label title = new Label(TEMPORARY_FILE_PLAYGROUND);
         title.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
 
         Label temporaryNotice = new Label("Temporary Workspace: Files in this session are not permanent.");
@@ -99,6 +102,8 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
 
         VBox container = new VBox(8, treeView, emptyStateLabel);
         VBox.setVgrow(treeView, Priority.ALWAYS);
+        workspaceDropTarget = container;
+        installDragandDropHandlers(container);
         return container;
     }
 
@@ -123,7 +128,7 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
 
     private void onCreateFileRequested() {
         TextInputDialog dialog = new TextInputDialog();
-        dialog.setTitle("Temporary File Playground");
+        dialog.setTitle(TEMPORARY_FILE_PLAYGROUND);
         dialog.setHeaderText("Create New File");
         dialog.setContentText("File Name:");
 
@@ -145,7 +150,7 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
 
     private void onCreateFolderRequested() {
         TextInputDialog dialog = new TextInputDialog();
-        dialog.setTitle("Temporary File Playground");
+        dialog.setTitle(TEMPORARY_FILE_PLAYGROUND);
         dialog.setHeaderText("Create New Folder");
         dialog.setContentText("Folder name:");
 
@@ -167,10 +172,76 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
 
     private void showErrorAlert(String title, String message) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle("Temporary File Playground");
+        alert.setTitle(TEMPORARY_FILE_PLAYGROUND);
         alert.setHeaderText(title);
         alert.setContentText(message);
         alert.showAndWait();
+    }
+
+    private void installDragandDropHandlers(Region dropTarget) {
+        dropTarget.setOnDragOver(event -> {
+           if(event.getDragboard().hasFiles()) {
+               event.acceptTransferModes(TransferMode.COPY);
+               dropTarget.setStyle(DROP_ACTIVE_STYLE);
+           }
+           event.consume();
+        });
+
+        dropTarget.setOnDragEntered(event -> {
+           if(event.getDragboard().hasFiles()) dropTarget.setStyle(DROP_ACTIVE_STYLE);
+           event.consume();
+        });
+
+        dropTarget.setOnDragExited(event -> {
+           dropTarget.setStyle(DROP_IDLE_STYLE);
+           event.consume();
+        });
+
+        dropTarget.setOnDragDropped(this::handleDrop);
+    }
+
+    private void handleDrop(DragEvent event) {
+        boolean dropComplete = false;
+        try {
+            if(event.getDragboard().hasFiles()) {
+                List<Path> paths = event.getDragboard()
+                        .getFiles()
+                        .stream()
+                        .map(File::toPath)
+                        .toList();
+
+                manager.importPaths(session.id(), paths);
+                refreshContents();
+                dropComplete = true;
+            }
+        } catch (IllegalArgumentException e) {
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                    AEGISLogger.AEGISLogLevel.WARNING,
+                    "Failed to import dropped items in Temporary File Playground for session " + session.id(),
+                    e
+            );
+            showErrorAlert("Cannot Import Items", friendlyImportMessage(e));
+        } catch (IllegalStateException e) {
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                    AEGISLogger.AEGISLogLevel.WARNING,
+                    "Failed to copy dropped items into Temporary File Playground for session " + session.id(),
+                    e
+            );
+            showErrorAlert("Cannot Import Items", "Unable to copy one or more dropped items right now.");
+        } finally {
+            if(workspaceDropTarget != null) workspaceDropTarget.setStyle(DROP_IDLE_STYLE);
+            event.setDropCompleted(dropComplete);
+            event.consume();
+        }
+    }
+
+    private String friendlyImportMessage(IllegalArgumentException e) {
+        String message = e.getMessage();
+        if(message == null || message.isBlank()) return "Unable to import the dropped items.";
+        if(message.contains("already exists")) return message;
+        return "Unable to import the dropped items. Please verify they are valid files/folders.";
     }
 
     private Path getSelectedTargetDirectory() {

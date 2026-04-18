@@ -7,6 +7,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -223,5 +224,95 @@ class AEGISTemporaryFilePlaygroundManagerTest {
                 () -> manager.createFolder(session.id(), outside, "docs"));
 
         assertEquals("Target directory must be inside the workspace", exception.getMessage());
+    }
+
+    @Test
+    void importPathsShouldImportSingleFileSuccessfully() throws Exception {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+        Path source = tempDir.resolve("single.txt");
+        Files.writeString(source, "hello");
+
+        manager.importPaths(session.id(), List.of(source));
+
+        Path imported = session.workspacePath().resolve("single.txt");
+        assertTrue(Files.isRegularFile(imported));
+        assertEquals("hello", Files.readString(imported));
+    }
+
+    @Test
+    void importPathsShouldImportMultipleFilesSuccessfully() throws Exception {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+        Path first = tempDir.resolve("one.txt");
+        Path second = tempDir.resolve("two.txt");
+        Files.writeString(first, "first");
+        Files.writeString(second, "second");
+
+        manager.importPaths(session.id(), List.of(first, second));
+
+        assertEquals("first", Files.readString(session.workspacePath().resolve("one.txt")));
+        assertEquals("second", Files.readString(session.workspacePath().resolve("two.txt")));
+    }
+
+    @Test
+    void importPathsShouldImportFolderRecursivelySuccessfully() throws Exception {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+        Path sourceFolder = tempDir.resolve("folderA");
+        Path nested = sourceFolder.resolve("nested");
+        Files.createDirectories(nested);
+        Files.writeString(sourceFolder.resolve("root.txt"), "root");
+        Files.writeString(nested.resolve("deep.txt"), "deep");
+
+        manager.importPaths(session.id(), List.of(sourceFolder));
+
+        Path importedFolder = session.workspacePath().resolve("folderA");
+        assertTrue(Files.isDirectory(importedFolder));
+        assertEquals("root", Files.readString(importedFolder.resolve("root.txt")));
+        assertEquals("deep", Files.readString(importedFolder.resolve("nested/deep.txt")));
+    }
+
+    @Test
+    void importPathsShouldRejectDuplicateTargetName() throws Exception {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+        Files.writeString(session.workspacePath().resolve("dupe.txt"), "existing");
+        Path source = tempDir.resolve("dupe.txt");
+        Files.writeString(source, "new");
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> manager.importPaths(session.id(), List.of(source)));
+
+        assertEquals("Dropped Item already exists: " + session.workspacePath() + "\\dupe.txt", exception.getMessage());
+    }
+
+    @Test
+    void importPathsShouldRejectUnknownSessionId() throws Exception {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        Path source = tempDir.resolve("single.txt");
+        Files.writeString(source, "hello");
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> manager.importPaths(UUID.randomUUID(), List.of(source)));
+
+        assertTrue(exception.getMessage().startsWith("Temporary playground session not found:"));
+    }
+
+    @Test
+    void importPathsShouldRejectEmptyImportList() {
+        Path root = tempDir.resolve("AEGIS/temp/file-playground");
+        AEGISTemporaryFilePlaygroundManager manager = new AEGISTemporaryFilePlaygroundManager(root);
+        TemporaryFilePlaygroundSession session = manager.createSession();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> manager.importPaths(session.id(), List.of()));
+
+        assertEquals("No Files or Folders to import.", exception.getMessage());
     }
 }
