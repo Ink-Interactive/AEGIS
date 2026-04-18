@@ -201,19 +201,41 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
     }
 
     private void handleDrop(DragEvent event) {
-        boolean dropComplete = false;
+        boolean dropAccepted = false;
         try {
+
             if(event.getDragboard().hasFiles()) {
-                List<Path> paths = event.getDragboard()
-                        .getFiles()
+                List<Path> paths = event.getDragboard().getFiles()
                         .stream()
                         .map(File::toPath)
                         .toList();
 
-                manager.importPaths(session.id(), paths);
-                refreshContents();
-                dropComplete = true;
+                dropAccepted = true;
+                AEGISThreadManager.submitAsyncTask(
+                "temporary-playground-import-" + session.id(),
+                        () -> importDroppedPaths(paths),
+                TemporaryFilePlaygroundPanel.this.getClass().getSimpleName(),
+                AEGISThreadManager.PoolType.IO_BOUND);
             }
+        } catch (RuntimeException e) {
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                    AEGISLogger.AEGISLogLevel.WARNING,
+                    "Failed to queue dropped item import in Temporary File Playground for session " + session.id(),
+                    e
+            );
+            showErrorAlert("Cannot Import Items", "Unable to start the import right now.");
+        } finally {
+            if(workspaceDropTarget != null)  workspaceDropTarget.setStyle(DROP_IDLE_STYLE);
+            event.setDropCompleted(dropAccepted);
+            event.consume();
+        }
+    }
+
+    private void importDroppedPaths(List<Path> paths) {
+        try {
+            manager.importPaths(session.id(), paths);
+            Platform.runLater(this::refreshContents);
         } catch (IllegalArgumentException e) {
             AEGISLogger.log(
                     AEGISLogger.AEGISLogKey.AEGIS_TOOL,
@@ -221,7 +243,7 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
                     "Failed to import dropped items in Temporary File Playground for session " + session.id(),
                     e
             );
-            showErrorAlert("Cannot Import Items", friendlyImportMessage(e));
+            Platform.runLater(() -> showErrorAlert("Cannot Import Items", friendlyImportMessage(e)));
         } catch (IllegalStateException e) {
             AEGISLogger.log(
                     AEGISLogger.AEGISLogKey.AEGIS_TOOL,
@@ -229,11 +251,7 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
                     "Failed to copy dropped items into Temporary File Playground for session " + session.id(),
                     e
             );
-            showErrorAlert("Cannot Import Items", "Unable to copy one or more dropped items right now.");
-        } finally {
-            if(workspaceDropTarget != null) workspaceDropTarget.setStyle(DROP_IDLE_STYLE);
-            event.setDropCompleted(dropComplete);
-            event.consume();
+            Platform.runLater(() -> showErrorAlert("Cannot Import Items", "Unable to copy one or more dropped items right now."));
         }
     }
 

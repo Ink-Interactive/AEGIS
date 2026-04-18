@@ -185,21 +185,37 @@ public class AEGISTemporaryFilePlaygroundManager {
         }
 
         Path workspacePath = session.workspacePath();
+        List<ImportPlan> importPlans = new ArrayList<>();
+        Set<Path> plannedTargets = new HashSet<>();
+
         for(Path path : paths) {
+
             if(path == null) throw new  IllegalArgumentException("Dropped Item cannot be null.");
 
             Path normalizedPath = path.toAbsolutePath().normalize();
             Path fileName = normalizedPath.getFileName();
+
             if(fileName == null) throw new  IllegalArgumentException("Dropped Item has no valid name" + normalizedPath);
             if(!Files.exists(normalizedPath)) throw new IllegalArgumentException("Dropped Item does not exist: " + normalizedPath);
 
             Path targetPath = workspacePath.resolve(fileName).normalize();
-            if(Files.exists(targetPath)) throw new IllegalArgumentException("Dropped Item already exists: " + targetPath);
 
+            if(Files.isDirectory(normalizedPath) && targetPath.toAbsolutePath().normalize().startsWith(normalizedPath)) {
+                throw new IllegalArgumentException("Dropped folder cannot be imported into itself: " + normalizedPath);
+            }
+
+            if(!plannedTargets.add(targetPath)) {
+                throw new IllegalArgumentException("Dropped Item already exists: " + targetPath);
+            }
+
+            if(Files.exists(targetPath)) throw new IllegalArgumentException("Dropped Item already exists: " + targetPath);
+            importPlans.add(new ImportPlan(normalizedPath, targetPath, fileName));
+        }
+        for(ImportPlan importPlan : importPlans) {
             try {
-                copyPath(normalizedPath, targetPath);
+                copyPath(importPlan.source(), importPlan.target());
             } catch (IOException e) {
-                throw new IllegalStateException("Unable to import '" + fileName + "' into workspace" , e);
+                throw new IllegalStateException("Unable to import '" + importPlan.fileName() + "' into workspace" , e);
             }
         }
     }
@@ -263,4 +279,5 @@ public class AEGISTemporaryFilePlaygroundManager {
      * @return playground root
      */
     public Path getPlaygroundRoot() { return playgroundRoot; }
+    private record ImportPlan(Path source, Path target, Path fileName) { }
 }
