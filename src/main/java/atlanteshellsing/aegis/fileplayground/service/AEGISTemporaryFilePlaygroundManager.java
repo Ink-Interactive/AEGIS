@@ -3,11 +3,14 @@ package atlanteshellsing.aegis.fileplayground.service;
 import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundSession;
 import atlanteshellsing.aegis.fileplayground.model.TemporaryFilePlaygroundState;
 
+import java.awt.*;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
-import java.util.*;import java.util.stream.Collectors;
+import java.util.*;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Manages Temporary File Playground sessions for the current application run.
@@ -21,6 +24,7 @@ public class AEGISTemporaryFilePlaygroundManager {
 
     private final Path playgroundRoot;
     private final Map<UUID, TemporaryFilePlaygroundSession> sessions;
+    private final PlaygroundOSIntegration osIntegration;
 
     /**
      * Creates a manager using the provided playground root.
@@ -28,9 +32,14 @@ public class AEGISTemporaryFilePlaygroundManager {
      * @param playgroundRoot root directory for all Temporary File Playground sessions
      */
     public AEGISTemporaryFilePlaygroundManager(Path playgroundRoot) {
+        this(playgroundRoot, new DesktopPlaygroundOSIntegration());
+    }
+
+    public AEGISTemporaryFilePlaygroundManager(Path playgroundRoot, PlaygroundOSIntegration osIntegration) {
         this.playgroundRoot = Objects.requireNonNull(playgroundRoot, "playgroundRoot cannot be null")
                 .toAbsolutePath()
                 .normalize();
+        this.osIntegration = Objects.requireNonNull(osIntegration, "osIntegration cannot be null");
         this.sessions = new LinkedHashMap<>();
     }
 
@@ -62,6 +71,76 @@ public class AEGISTemporaryFilePlaygroundManager {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to create temporary file playground session", e);
         }
+    }
+
+    /**
+     * Opens the current session workspace with the OS file manager.
+     *
+     * @param sessionId session ID
+     */
+    public synchronized void openWorkspace(UUID sessionId) {
+        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        Path workspacePath = session.workspacePath();
+
+        if(!Files.isDirectory(workspacePath)) throw new IllegalStateException("Workspace path does not exist or is not a directory: " + workspacePath);
+
+        try {
+            osIntegration.openPath(workspacePath);
+        } catch (IOException | RuntimeException e) {
+            throw new IllegalStateException("Failed to open workspace in Explorer: " + workspacePath, e);
+        }
+    }
+
+    /**
+     * Opens a selected file using the default associated OS application.
+     *
+     * @param sessionId session ID
+     * @param selectedPath selected file
+     */
+    public synchronized void openSelectedFile(UUID sessionId, Path selectedPath) {
+        Path resolvedPath = validateSelectedPath(sessionId, selectedPath, true);
+        try {
+            osIntegration.openPath(resolvedPath);
+        } catch (IOException | RuntimeException e) {
+            throw new IllegalStateException("Failed to open selected file: " + resolvedPath, e);
+        }
+    }
+
+    /**
+     * Opens Explorer / file manager for the selected workspace item.
+     * - if selection is a directory, opens that directory
+     * - if selection is a file, opens the parent directory
+     *
+     * @param sessionId session ID
+     * @param selectedPath selected path inside workspace
+     */
+    public synchronized void openSelectedInExplorer(UUID sessionId, Path selectedPath) {
+        Path resolvedPath = validateSelectedPath(sessionId, selectedPath, false);
+        Path targetDirectory = Files.isDirectory(resolvedPath) ? resolvedPath : resolvedPath.getParent();
+
+        if(targetDirectory == null) throw new IllegalArgumentException("Selected path has no parent directory: " + resolvedPath);
+
+        try {
+            osIntegration.openPath(targetDirectory);
+        } catch (IOException | RuntimeException e) {
+            throw new IllegalStateException("Failed to open selected path in Explorer: " + targetDirectory, e);
+        }
+    }
+
+    private Path validateSelectedPath(UUID sessionId, Path selectedPath, boolean mustBeFile) {
+        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        Path workspacePath = session.workspacePath().toAbsolutePath().normalize();
+
+        if(selectedPath == null) throw new IllegalArgumentException("Selected path cannot be null");
+
+        Path normalizedSelection = selectedPath.toAbsolutePath().normalize();
+        if(!normalizedSelection.startsWith(workspacePath)) throw new IllegalArgumentException("Selected path must be inside the session workspace: " + normalizedSelection);
+
+        if(!Files.exists(normalizedSelection)) throw new IllegalArgumentException("Selected path does not exist: " + normalizedSelection);
+
+        if(mustBeFile && !Files.isRegularFile(normalizedSelection)) throw new IllegalArgumentException("Selected path must be a file: " + normalizedSelection);
+
+        return normalizedSelection;
     }
 
     /**
@@ -280,4 +359,25 @@ public class AEGISTemporaryFilePlaygroundManager {
      */
     public Path getPlaygroundRoot() { return playgroundRoot; }
     private record ImportPlan(Path source, Path target, Path fileName) { }
+
+    interface PlaygroundOSIntegration {
+        void openPath(Path path) throws IOException;
+    }
+
+    static class DesktopPlaygroundOSIntegration implements PlaygroundOSIntegration {
+        @Override
+        public void openPath(Path path) throws IOException {
+            Desktop desktop = requireDesktopAction(Desktop.Action.OPEN);
+            desktop.open(path.toFile());
+        }
+
+        private Desktop requireDesktopAction(Desktop.Action action) throws IOException {
+            if(!Desktop.isDesktopSupported()) throw new IOException("Desktop Integration is not supported on this platform");
+
+            Desktop desktop = Desktop.getDesktop();
+            if(!desktop.isSupported(action)) throw new IOException("Desktop Integration is not supported on this platform");
+
+            return desktop;
+        }
+    }
 }

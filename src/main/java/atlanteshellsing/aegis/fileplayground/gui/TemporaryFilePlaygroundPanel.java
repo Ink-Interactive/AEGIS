@@ -92,11 +92,14 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
                 super.updateItem(item, empty);
                 if(empty || item == null) {
                     setText(null);
+                    setContextMenu(null);
                     return;
                 }
                 setText(item.label());
+                setContextMenu(buildTreeItemContextMenu(item));
             }
         });
+        treeView.setContextMenu(buildWorkspaceContextMenu());
 
         emptyStateLabel.setStyle("-fx-font-style: italic; -fx-opacity: 0.75;");
 
@@ -108,22 +111,62 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
     }
 
     private HBox buildActionsControls() {
-        Button openInExplorer = new Button("Open In Explorer");
         Button newFile =  new Button("New File");
         Button newFolder =  new Button("New Folder");
         Button deleteSelected =  new Button("Delete Selected");
         Button closePlayground = new Button("Close Playground");
 
-        openInExplorer.setDisable(true);
         deleteSelected.setDisable(true);
 
         newFile.setOnAction(action -> onCreateFileRequested());
         newFolder.setOnAction(action -> onCreateFolderRequested());
         closePlayground.setOnAction(action -> onCloseRequested.run());
 
-        HBox actions = new HBox(8, openInExplorer, newFile, newFolder, deleteSelected, closePlayground);
+        HBox actions = new HBox(8, newFile, newFolder, deleteSelected, closePlayground);
         actions.setPadding(new Insets(12, 0, 0, 0));
         return actions;
+    }
+
+    private void onOpenWorkspaceRequested() {
+        try {
+            manager.openWorkspace(session.id());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                    AEGISLogger.AEGISLogLevel.WARNING,
+                    "Failed to open workspace in Explorer for session " + session.id() + " at " + session.workspacePath(),
+                    e
+            );
+            showErrorAlert("Cannot Open Workspace", "Unable to open this workspace in Explorer right now.");
+        }
+    }
+
+    private void onOpenSelectedInExplorerRequested(Path selectedPath) {
+        try {
+            manager.openSelectedInExplorer(session.id(), selectedPath);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                    AEGISLogger.AEGISLogLevel.WARNING,
+                    "Failed to open selected path in Explorer for session " + session.id() + " and path " + selectedPath,
+                    e
+            );
+            showErrorAlert("Cannot Open In Explorer", messageOrFallback(e.getMessage(), "Unable to open this item in Explorer right now."));
+        }
+    }
+
+    private void onOpenSelectedRequested(Path selectedPath) {
+        try {
+            manager.openSelectedFile(session.id(), selectedPath);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                    AEGISLogger.AEGISLogLevel.WARNING,
+                    "Failed to open selected file in Temporary File Playground for session " + session.id() + " and path " + selectedPath,
+                    e
+            );
+            showErrorAlert("Cannot Open Selected File", messageOrFallback(e.getMessage(), "Unable to open the selected file right now."));
+        }
     }
 
     private void onCreateFileRequested() {
@@ -271,6 +314,31 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
 
         Path parent = entry.path().getParent();
         return parent == null ? session.workspacePath() : parent;
+    }
+
+    private String messageOrFallback(String message, String fallbackMessage) {
+        if(message == null || message.isBlank()) return fallbackMessage;
+        return message;
+    }
+
+    private ContextMenu buildWorkspaceContextMenu() {
+        MenuItem openWorkspace = new MenuItem("Open in Explorer");
+        openWorkspace.setOnAction(action -> onOpenWorkspaceRequested());
+        return new ContextMenu(openWorkspace);
+    }
+
+    private ContextMenu buildTreeItemContextMenu(WorkspaceTreeEntry entry) {
+        MenuItem openWorkspace = new MenuItem("Open in Explorer");
+        openWorkspace.setOnAction(action -> onOpenSelectedInExplorerRequested(entry.path()));
+
+        MenuItem openSelected =  new MenuItem("Open Selected Item");
+        openSelected.setOnAction(action -> onOpenSelectedRequested(entry.path()));
+
+        if(entry.isDirectory()) {
+            return new ContextMenu(openWorkspace);
+        }
+
+        return new ContextMenu(openSelected, openWorkspace);
     }
 
     private void refreshContents() {
