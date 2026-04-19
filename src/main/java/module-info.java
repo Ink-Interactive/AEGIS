@@ -4,6 +4,7 @@ module atlanteshellsing.aegis {
     requires java.logging;
 	requires java.compiler;
     requires java.xml;
+    requires java.desktop;
 
     opens atlanteshellsing.aegis.gui to javafx.fxml;
     opens atlanteshellsing.aegis.components.gui to javafx.fxml;
