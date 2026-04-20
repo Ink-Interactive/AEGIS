@@ -128,330 +128,351 @@ public class TemporaryFilePlaygroundPanel extends BorderPane {
     }
 
     private void onOpenWorkspaceRequested() {
-        try {
-            manager.openWorkspace(session.id());
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            AEGISLogger.log(
-                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
-                    AEGISLogger.AEGISLogLevel.WARNING,
-                    "Failed to open workspace in Explorer for session " + session.id() + " at " + session.workspacePath(),
-                    e
-            );
-            showErrorAlert("Cannot Open Workspace", "Unable to open this workspace in Explorer right now.");
-        }
+        runOpenActionAsync(
+                "temporary-playground-open-workspace-" + session.id(),
+                () -> manager.openWorkspace(session.id()),
+                "Failed to open workspace in Explorer for session " + session.id() + " at " + session.workspacePath(),
+                "Cannot Open Workspace",
+                "Unable to open this workspace in Explorer right now."
+        );
     }
 
     private void onOpenSelectedInExplorerRequested(Path selectedPath) {
-        try {
-            manager.openSelectedInExplorer(session.id(), selectedPath);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            AEGISLogger.log(
-                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
-                    AEGISLogger.AEGISLogLevel.WARNING,
-                    "Failed to open selected path in Explorer for session " + session.id() + " and path " + selectedPath,
-                    e
-            );
-            showErrorAlert("Cannot Open In Explorer", messageOrFallback(e.getMessage(), "Unable to open this item in Explorer right now."));
-        }
+        runOpenActionAsync(
+                "temporary-playground-open-selected-explorer-" + session.id(),
+                () -> manager.openSelectedInExplorer(session.id(), selectedPath),
+                "Failed to open selected path in Explorer for session " + session.id() + " and path " + selectedPath,
+                "Cannot Open In Explorer",
+                "Unable to open this item in Explorer right now."
+        );
     }
 
     private void onOpenSelectedRequested(Path selectedPath) {
-        try {
-            manager.openSelectedFile(session.id(), selectedPath);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            AEGISLogger.log(
-                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
-                    AEGISLogger.AEGISLogLevel.WARNING,
-                    "Failed to open selected file in Temporary File Playground for session " + session.id() + " and path " + selectedPath,
-                    e
-            );
-            showErrorAlert("Cannot Open Selected File", messageOrFallback(e.getMessage(), "Unable to open the selected file right now."));
-        }
+        runOpenActionAsync(
+                "temporary-playground-open-selected-file-" + session.id(),
+                () -> manager.openSelectedFile(session.id(), selectedPath),
+                "Failed to open selected file in Temporary File Playground for session " + session.id() + " and path " + selectedPath,
+                "Cannot Open Selected File",
+                "Unable to open the selected file right now."
+        );
     }
 
-    private void onCreateFileRequested() {
-        TextInputDialog dialog = new TextInputDialog();
-        dialog.setTitle(TEMPORARY_FILE_PLAYGROUND);
-        dialog.setHeaderText("Create New File");
-        dialog.setContentText("File Name:");
-
-        dialog.showAndWait().ifPresent(name -> {
-            try {
-                manager.createFile(session.id(), getSelectedTargetDirectory(), name);
-                refreshContents();
-            } catch (IllegalStateException | IllegalArgumentException e) {
-                AEGISLogger.log(
-                        AEGISLogger.AEGISLogKey.AEGIS_TOOL,
-                        AEGISLogger.AEGISLogLevel.WARNING,
-                        "Failed to create file in Temporary File Playground for session " + session.id(),
-                        e
-                );
-                showErrorAlert("Cannot Create File", e.getMessage());
-            }
-        });
-    }
-
-    private void onCreateFolderRequested() {
-        TextInputDialog dialog = new TextInputDialog();
-        dialog.setTitle(TEMPORARY_FILE_PLAYGROUND);
-        dialog.setHeaderText("Create New Folder");
-        dialog.setContentText("Folder name:");
-
-        dialog.showAndWait().ifPresent(name -> {
-           try {
-                manager.createFolder(session.id(), getSelectedTargetDirectory(), name);
-                refreshContents();
-              } catch (IllegalStateException | IllegalArgumentException e) {
-                AEGISLogger.log(
-                          AEGISLogger.AEGISLogKey.AEGIS_TOOL,
-                          AEGISLogger.AEGISLogLevel.WARNING,
-                          "Failed to create folder in Temporary File Playground for session " + session.id(),
-                          e
-                );
-                showErrorAlert("Cannot Create Folder", e.getMessage());
-           }
-        });
-    }
-
-    private void showErrorAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle(TEMPORARY_FILE_PLAYGROUND);
-        alert.setHeaderText(title);
-        alert.setContentText(message);
-        alert.showAndWait();
-    }
-
-    private void installDragandDropHandlers(Region dropTarget) {
-        dropTarget.setOnDragOver(event -> {
-           if(event.getDragboard().hasFiles()) {
-               event.acceptTransferModes(TransferMode.COPY);
-               dropTarget.setStyle(DROP_ACTIVE_STYLE);
-           }
-           event.consume();
-        });
-
-        dropTarget.setOnDragEntered(event -> {
-           if(event.getDragboard().hasFiles()) dropTarget.setStyle(DROP_ACTIVE_STYLE);
-           event.consume();
-        });
-
-        dropTarget.setOnDragExited(event -> {
-           dropTarget.setStyle(DROP_IDLE_STYLE);
-           event.consume();
-        });
-
-        dropTarget.setOnDragDropped(this::handleDrop);
-    }
-
-    private void handleDrop(DragEvent event) {
-        boolean dropAccepted = false;
-        try {
-
-            if(event.getDragboard().hasFiles()) {
-                List<Path> paths = event.getDragboard().getFiles()
-                        .stream()
-                        .map(File::toPath)
-                        .toList();
-
-                dropAccepted = true;
-                AEGISThreadManager.submitAsyncTask(
-                "temporary-playground-import-" + session.id(),
-                        () -> importDroppedPaths(paths),
-                TemporaryFilePlaygroundPanel.this.getClass().getSimpleName(),
-                AEGISThreadManager.PoolType.IO_BOUND);
-            }
-        } catch (RuntimeException e) {
-            AEGISLogger.log(
-                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
-                    AEGISLogger.AEGISLogLevel.WARNING,
-                    "Failed to queue dropped item import in Temporary File Playground for session " + session.id(),
-                    e
-            );
-            showErrorAlert("Cannot Import Items", "Unable to start the import right now.");
-        } finally {
-            if(workspaceDropTarget != null)  workspaceDropTarget.setStyle(DROP_IDLE_STYLE);
-            event.setDropCompleted(dropAccepted);
-            event.consume();
-        }
-    }
-
-    private void importDroppedPaths(List<Path> paths) {
-        try {
-            manager.importPaths(session.id(), paths);
-            Platform.runLater(this::refreshContents);
-        } catch (IllegalArgumentException e) {
-            AEGISLogger.log(
-                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
-                    AEGISLogger.AEGISLogLevel.WARNING,
-                    "Failed to import dropped items in Temporary File Playground for session " + session.id(),
-                    e
-            );
-            Platform.runLater(() -> showErrorAlert("Cannot Import Items", friendlyImportMessage(e)));
-        } catch (IllegalStateException e) {
-            AEGISLogger.log(
-                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
-                    AEGISLogger.AEGISLogLevel.WARNING,
-                    "Failed to copy dropped items into Temporary File Playground for session " + session.id(),
-                    e
-            );
-            Platform.runLater(() -> showErrorAlert("Cannot Import Items", "Unable to copy one or more dropped items right now."));
-        }
-    }
-
-    private String friendlyImportMessage(IllegalArgumentException e) {
-        String message = e.getMessage();
-        if(message == null || message.isBlank()) return "Unable to import the dropped items.";
-        if(message.contains("already exists")) return message;
-        return "Unable to import the dropped items. Please verify they are valid files/folders.";
-    }
-
-    private Path getSelectedTargetDirectory() {
-        TreeItem<WorkspaceTreeEntry> selected = treeView.getSelectionModel().getSelectedItem();
-        if (selected == null || selected.getValue() == null) return session.workspacePath();
-
-        WorkspaceTreeEntry entry = selected.getValue();
-        if(entry.isDirectory()) return entry.path();
-
-        Path parent = entry.path().getParent();
-        return parent == null ? session.workspacePath() : parent;
-    }
-
-    private String messageOrFallback(String message, String fallbackMessage) {
-        if(message == null || message.isBlank()) return fallbackMessage;
-        return message;
-    }
-
-    private ContextMenu buildWorkspaceContextMenu() {
-        MenuItem openWorkspace = new MenuItem("Open in Explorer");
-        openWorkspace.setOnAction(action -> onOpenWorkspaceRequested());
-        return new ContextMenu(openWorkspace);
-    }
-
-    private ContextMenu buildTreeItemContextMenu(WorkspaceTreeEntry entry) {
-        MenuItem openWorkspace = new MenuItem("Open in Explorer");
-        openWorkspace.setOnAction(action -> onOpenSelectedInExplorerRequested(entry.path()));
-
-        MenuItem openSelected =  new MenuItem("Open Selected Item");
-        openSelected.setOnAction(action -> onOpenSelectedRequested(entry.path()));
-
-        if(entry.isDirectory()) {
-            return new ContextMenu(openWorkspace);
-        }
-
-        return new ContextMenu(openSelected, openWorkspace);
-    }
-
-    private void refreshContents() {
-        long currentRefreshId = refreshRequestId.incrementAndGet();
-        emptyStateLabel.setText("Refreshing Workspace...");
-        emptyStateLabel.setVisible(true);
-        emptyStateLabel.setManaged(true);
-
+    private void runOpenActionAsync(String taskName, Runnable openAction, String logMessage, String alertTitle, String fallbackMessage) {
         try {
             AEGISThreadManager.submitAsyncTask(
-                    "temporary-playground-refresh-" + session.id(),
+                    taskName,
                     () -> {
                         try {
-                            WorkspaceNode workspaceModel = buildWorkspaceModel(session.workspacePath());
-
+                            openAction.run();
+                        } catch (IllegalArgumentException | IllegalStateException e) {
                             Platform.runLater(() -> {
-                               if(refreshRequestId.get() != currentRefreshId) return;
-
-                               TreeItem<WorkspaceTreeEntry> root = buildTree(workspaceModel);
-                               treeView.setRoot(root);
-
-                               boolean hasEntries = !root.getChildren().isEmpty();
-                               emptyStateLabel.setText("This temporary workspace is empty. Create a file or folder to get started.");
-                               emptyStateLabel.setVisible(!hasEntries);
-                               emptyStateLabel.setManaged(!hasEntries);
+                                AEGISLogger.log(
+                                        AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                                        AEGISLogger.AEGISLogLevel.WARNING,
+                                        logMessage,
+                                        e
+                                );
+                                showErrorAlert(alertTitle, messageOrFallback(e.getMessage(), fallbackMessage));
                             });
-                        } catch (RuntimeException e) {
-                            Platform.runLater(() -> {
-                               if(refreshRequestId.get() != currentRefreshId) return;
-                               emptyStateLabel.setText("Unable to refresh workspace right now.");
-                               emptyStateLabel.setVisible(true);
-                               emptyStateLabel.setManaged(true);
-                            });
-
-                            AEGISLogger.log(
-                                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
-                                    AEGISLogger.AEGISLogLevel.WARNING,
-                                    "Failed to refresh Temporary File Playground for session " + session.id(),
-                                    e
-                            );
                         }
                     },
                     TemporaryFilePlaygroundPanel.this.getClass().getSimpleName(),
                     AEGISThreadManager.PoolType.IO_BOUND
             );
         } catch (RuntimeException e) {
-            emptyStateLabel.setText("Unable to refresh workspace right now.");
-            emptyStateLabel.setVisible(true);
-            emptyStateLabel.setManaged(true);
             AEGISLogger.log(
                     AEGISLogger.AEGISLogKey.AEGIS_TOOL,
                     AEGISLogger.AEGISLogLevel.WARNING,
-                    "Failed to queue Temporary File Playground refresh for session " + session.id(),
+                    "Failed to queue open action in Temporary File Playground for session " + session.id(),
                     e
             );
+            showErrorAlert(alertTitle, fallbackMessage);
         }
     }
 
-    private TreeItem<WorkspaceTreeEntry> buildTree(WorkspaceNode workspaceNode) {
-        TreeItem<WorkspaceTreeEntry> root = new TreeItem<>(new WorkspaceTreeEntry(
-                workspaceNode.label(),
-                workspaceNode.path(),
-                workspaceNode.directory()
-        ));
-        for(WorkspaceNode child : workspaceNode.children()) {
-            root.getChildren().add(buildTree(child));
+private void onCreateFileRequested() {
+    TextInputDialog dialog = new TextInputDialog();
+    dialog.setTitle(TEMPORARY_FILE_PLAYGROUND);
+    dialog.setHeaderText("Create New File");
+    dialog.setContentText("File Name:");
+
+    dialog.showAndWait().ifPresent(name -> {
+        try {
+            manager.createFile(session.id(), getSelectedTargetDirectory(), name);
+            refreshContents();
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                    AEGISLogger.AEGISLogLevel.WARNING,
+                    "Failed to create file in Temporary File Playground for session " + session.id(),
+                    e
+            );
+            showErrorAlert("Cannot Create File", e.getMessage());
         }
-        root.setExpanded(true);
-        return root;
-    }
+    });
+}
 
-    private WorkspaceNode buildWorkspaceModel(Path rootPath) {
-        return new WorkspaceNode(rootPath.toString(), rootPath, true, readWorkspaceChildren(rootPath));
-    }
+private void onCreateFolderRequested() {
+    TextInputDialog dialog = new TextInputDialog();
+    dialog.setTitle(TEMPORARY_FILE_PLAYGROUND);
+    dialog.setHeaderText("Create New Folder");
+    dialog.setContentText("Folder name:");
 
-    private List<WorkspaceNode> readWorkspaceChildren(Path path) {
-        if(!Files.isDirectory(path)) return List.of();
+    dialog.showAndWait().ifPresent(name -> {
+        try {
+            manager.createFolder(session.id(), getSelectedTargetDirectory(), name);
+            refreshContents();
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                    AEGISLogger.AEGISLogLevel.WARNING,
+                    "Failed to create folder in Temporary File Playground for session " + session.id(),
+                    e
+            );
+            showErrorAlert("Cannot Create Folder", e.getMessage());
+        }
+    });
+}
 
-        List<Path> children;
-        try (Stream<Path> stream = Files.list(path)) {
-            children = stream
-                    .sorted(Comparator
-                            .comparing((Path child) -> !Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS))
-                            .thenComparing(child -> child.getFileName().toString().toLowerCase()))
+private void showErrorAlert(String title, String message) {
+    Alert alert = new Alert(Alert.AlertType.ERROR);
+    alert.setTitle(TEMPORARY_FILE_PLAYGROUND);
+    alert.setHeaderText(title);
+    alert.setContentText(message);
+    alert.showAndWait();
+}
+
+private void installDragandDropHandlers(Region dropTarget) {
+    dropTarget.setOnDragOver(event -> {
+        if(event.getDragboard().hasFiles()) {
+            event.acceptTransferModes(TransferMode.COPY);
+            dropTarget.setStyle(DROP_ACTIVE_STYLE);
+        }
+        event.consume();
+    });
+
+    dropTarget.setOnDragEntered(event -> {
+        if(event.getDragboard().hasFiles()) dropTarget.setStyle(DROP_ACTIVE_STYLE);
+        event.consume();
+    });
+
+    dropTarget.setOnDragExited(event -> {
+        dropTarget.setStyle(DROP_IDLE_STYLE);
+        event.consume();
+    });
+
+    dropTarget.setOnDragDropped(this::handleDrop);
+}
+
+private void handleDrop(DragEvent event) {
+    boolean dropAccepted = false;
+    try {
+
+        if(event.getDragboard().hasFiles()) {
+            List<Path> paths = event.getDragboard().getFiles()
+                    .stream()
+                    .map(File::toPath)
                     .toList();
-        } catch (IOException e) {
-            AEGISLogger.log(
-                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
-                    AEGISLogger.AEGISLogLevel.WARNING,
-                    "Failed to read Temporary File Playground path: " + path,
-                    e
-            );
-            return List.of();
+
+            dropAccepted = true;
+            AEGISThreadManager.submitAsyncTask(
+                    "temporary-playground-import-" + session.id(),
+                    () -> importDroppedPaths(paths),
+                    TemporaryFilePlaygroundPanel.this.getClass().getSimpleName(),
+                    AEGISThreadManager.PoolType.IO_BOUND);
         }
+    } catch (RuntimeException e) {
+        AEGISLogger.log(
+                AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                AEGISLogger.AEGISLogLevel.WARNING,
+                "Failed to queue dropped item import in Temporary File Playground for session " + session.id(),
+                e
+        );
+        showErrorAlert("Cannot Import Items", "Unable to start the import right now.");
+    } finally {
+        if(workspaceDropTarget != null)  workspaceDropTarget.setStyle(DROP_IDLE_STYLE);
+        event.setDropCompleted(dropAccepted);
+        event.consume();
+    }
+}
 
-        return children.stream()
-                .map(child -> {
-                    boolean isDirectory = Files.isDirectory(child,  LinkOption.NOFOLLOW_LINKS);
-                    boolean isSymlink = Files.isSymbolicLink(child);
+private void importDroppedPaths(List<Path> paths) {
+    try {
+        manager.importPaths(session.id(), paths);
+        Platform.runLater(this::refreshContents);
+    } catch (IllegalArgumentException e) {
+        AEGISLogger.log(
+                AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                AEGISLogger.AEGISLogLevel.WARNING,
+                "Failed to import dropped items in Temporary File Playground for session " + session.id(),
+                e
+        );
+        Platform.runLater(() -> showErrorAlert("Cannot Import Items", friendlyImportMessage(e)));
+    } catch (IllegalStateException e) {
+        AEGISLogger.log(
+                AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                AEGISLogger.AEGISLogLevel.WARNING,
+                "Failed to copy dropped items into Temporary File Playground for session " + session.id(),
+                e
+        );
+        Platform.runLater(() -> showErrorAlert("Cannot Import Items", "Unable to copy one or more dropped items right now."));
+    }
+}
 
-                    String displayName = child.getFileName() == null
-                            ? child.toString()
-                            : child.getFileName().toString();
-                    String label = (isDirectory ? "📁 " : "📄 ") + displayName;
-                    List<WorkspaceNode> nestedChildren = (isDirectory && !isSymlink)
-                            ? readWorkspaceChildren(child)
-                            : List.of();
+private String friendlyImportMessage(IllegalArgumentException e) {
+    String message = e.getMessage();
+    if(message == null || message.isBlank()) return "Unable to import the dropped items.";
+    if(message.contains("already exists")) return message;
+    return "Unable to import the dropped items. Please verify they are valid files/folders.";
+}
 
-                    return new WorkspaceNode(label, child, isDirectory, nestedChildren);
-                })
-                .toList();
+private Path getSelectedTargetDirectory() {
+    TreeItem<WorkspaceTreeEntry> selected = treeView.getSelectionModel().getSelectedItem();
+    if (selected == null || selected.getValue() == null) return session.workspacePath();
+
+    WorkspaceTreeEntry entry = selected.getValue();
+    if(entry.isDirectory()) return entry.path();
+
+    Path parent = entry.path().getParent();
+    return parent == null ? session.workspacePath() : parent;
+}
+
+private String messageOrFallback(String message, String fallbackMessage) {
+    if(message == null || message.isBlank()) return fallbackMessage;
+    return message;
+}
+
+private ContextMenu buildWorkspaceContextMenu() {
+    MenuItem openWorkspace = new MenuItem("Open in Explorer");
+    openWorkspace.setOnAction(action -> onOpenWorkspaceRequested());
+    return new ContextMenu(openWorkspace);
+}
+
+private ContextMenu buildTreeItemContextMenu(WorkspaceTreeEntry entry) {
+    MenuItem openWorkspace = new MenuItem("Open in Explorer");
+    openWorkspace.setOnAction(action -> onOpenSelectedInExplorerRequested(entry.path()));
+
+    MenuItem openSelected =  new MenuItem("Open Selected Item");
+    openSelected.setOnAction(action -> onOpenSelectedRequested(entry.path()));
+
+    if(entry.isDirectory()) {
+        return new ContextMenu(openWorkspace);
     }
 
-    private record WorkspaceNode(String label, Path path, boolean directory, List<WorkspaceNode> children) { }
-    private record WorkspaceTreeEntry(String label, Path path, boolean isDirectory) { }
+    return new ContextMenu(openSelected, openWorkspace);
+}
+
+private void refreshContents() {
+    long currentRefreshId = refreshRequestId.incrementAndGet();
+    emptyStateLabel.setText("Refreshing Workspace...");
+    emptyStateLabel.setVisible(true);
+    emptyStateLabel.setManaged(true);
+
+    try {
+        AEGISThreadManager.submitAsyncTask(
+                "temporary-playground-refresh-" + session.id(),
+                () -> {
+                    try {
+                        WorkspaceNode workspaceModel = buildWorkspaceModel(session.workspacePath());
+
+                        Platform.runLater(() -> {
+                            if(refreshRequestId.get() != currentRefreshId) return;
+
+                            TreeItem<WorkspaceTreeEntry> root = buildTree(workspaceModel);
+                            treeView.setRoot(root);
+
+                            boolean hasEntries = !root.getChildren().isEmpty();
+                            emptyStateLabel.setText("This temporary workspace is empty. Create a file or folder to get started.");
+                            emptyStateLabel.setVisible(!hasEntries);
+                            emptyStateLabel.setManaged(!hasEntries);
+                        });
+                    } catch (RuntimeException e) {
+                        Platform.runLater(() -> {
+                            if(refreshRequestId.get() != currentRefreshId) return;
+                            emptyStateLabel.setText("Unable to refresh workspace right now.");
+                            emptyStateLabel.setVisible(true);
+                            emptyStateLabel.setManaged(true);
+                        });
+
+                        AEGISLogger.log(
+                                AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                                AEGISLogger.AEGISLogLevel.WARNING,
+                                "Failed to refresh Temporary File Playground for session " + session.id(),
+                                e
+                        );
+                    }
+                },
+                TemporaryFilePlaygroundPanel.this.getClass().getSimpleName(),
+                AEGISThreadManager.PoolType.IO_BOUND
+        );
+    } catch (RuntimeException e) {
+        emptyStateLabel.setText("Unable to refresh workspace right now.");
+        emptyStateLabel.setVisible(true);
+        emptyStateLabel.setManaged(true);
+        AEGISLogger.log(
+                AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                AEGISLogger.AEGISLogLevel.WARNING,
+                "Failed to queue Temporary File Playground refresh for session " + session.id(),
+                e
+        );
+    }
+}
+
+private TreeItem<WorkspaceTreeEntry> buildTree(WorkspaceNode workspaceNode) {
+    TreeItem<WorkspaceTreeEntry> root = new TreeItem<>(new WorkspaceTreeEntry(
+            workspaceNode.label(),
+            workspaceNode.path(),
+            workspaceNode.directory()
+    ));
+    for(WorkspaceNode child : workspaceNode.children()) {
+        root.getChildren().add(buildTree(child));
+    }
+    root.setExpanded(true);
+    return root;
+}
+
+private WorkspaceNode buildWorkspaceModel(Path rootPath) {
+    return new WorkspaceNode(rootPath.toString(), rootPath, true, readWorkspaceChildren(rootPath));
+}
+
+private List<WorkspaceNode> readWorkspaceChildren(Path path) {
+    if(!Files.isDirectory(path)) return List.of();
+
+    List<Path> children;
+    try (Stream<Path> stream = Files.list(path)) {
+        children = stream
+                .sorted(Comparator
+                        .comparing((Path child) -> !Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS))
+                        .thenComparing(child -> child.getFileName().toString().toLowerCase()))
+                .toList();
+    } catch (IOException e) {
+        AEGISLogger.log(
+                AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                AEGISLogger.AEGISLogLevel.WARNING,
+                "Failed to read Temporary File Playground path: " + path,
+                e
+        );
+        return List.of();
+    }
+
+    return children.stream()
+            .map(child -> {
+                boolean isDirectory = Files.isDirectory(child,  LinkOption.NOFOLLOW_LINKS);
+                boolean isSymlink = Files.isSymbolicLink(child);
+
+                String displayName = child.getFileName() == null
+                        ? child.toString()
+                        : child.getFileName().toString();
+                String label = (isDirectory ? "📁 " : "📄 ") + displayName;
+                List<WorkspaceNode> nestedChildren = (isDirectory && !isSymlink)
+                        ? readWorkspaceChildren(child)
+                        : List.of();
+
+                return new WorkspaceNode(label, child, isDirectory, nestedChildren);
+            })
+            .toList();
+}
+
+private record WorkspaceNode(String label, Path path, boolean directory, List<WorkspaceNode> children) { }
+private record WorkspaceTreeEntry(String label, Path path, boolean isDirectory) { }
 }
