@@ -480,6 +480,62 @@ class AEGISTemporaryFilePlaygroundManagerTest {
         }
     }
 
+    @Nested
+    class CloseSessionTest {
+
+        @Test
+        void CloseSessionTest_001_closeSessionShouldDeleteWorkspaceRecursively() throws Exception {
+            AEGISTemporaryFilePlaygroundManager manager = createManager();
+            TemporaryFilePlaygroundSession session = manager.createSession();
+            Path nestedFolder = Files.createDirectories(session.workspacePath().resolve("docs/nested"));
+            Path nestedFile = Files.writeString(nestedFolder.resolve("notes.txt"), "hello");
+
+            manager.closeSession(session.id());
+
+            assertTrue(Files.notExists(nestedFile));
+            assertTrue(Files.notExists(nestedFolder));
+            assertTrue(Files.notExists(session.workspacePath()));
+        }
+
+        @Test
+        void CloseSessionTest_002_closeSessionShouldRemoveSessionFromTrackingOnSuccess() {
+            AEGISTemporaryFilePlaygroundManager manager = createManager();
+            TemporaryFilePlaygroundSession session = manager.createSession();
+
+            manager.closeSession(session.id());
+
+            assertTrue(manager.getAllSessions().isEmpty());
+            assertTrue(manager.getOpenSessions().isEmpty());
+        }
+
+        @Test
+        void CloseSessionTest_003_closeSessionShouldRejectUnknownSessionId() {
+            AEGISTemporaryFilePlaygroundManager manager = createManager();
+
+            IllegalArgumentException exception = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> manager.closeSession(UUID.randomUUID())
+            );
+
+            assertTrue(exception.getMessage().startsWith("Temporary playground session not found:"));
+        }
+
+        @Test
+        void CloseSessionTest_004_closeSessionShouldLeaveSessionTrackedWhenDeletionFails() throws Exception {
+            AEGISTemporaryFilePlaygroundManager manager = createManager();
+            TemporaryFilePlaygroundSession session = manager.createSession();
+            assertTrue(Files.deleteIfExists(session.workspacePath()));
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> manager.closeSession(session.id())
+            );
+
+            assertEquals(1, manager.getAllSessions().size());
+            assertEquals(session, manager.getSession(session.id()));
+        }
+    }
+
     private static final class StubOsIntegration implements AEGISTemporaryFilePlaygroundManager.PlaygroundOSIntegration {
         private boolean failOpen;
         private Path lastOpenedPath;

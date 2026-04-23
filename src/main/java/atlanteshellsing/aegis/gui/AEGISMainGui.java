@@ -97,10 +97,10 @@ public class AEGISMainGui {
             TemporaryFilePlaygroundPanel panel = new TemporaryFilePlaygroundPanel(
                     playgroundManager,
                     session,
-                    () -> tabPane.removeTab(tabKey)
+                    () -> closeTemporaryPlayground(session, tabKey)
             );
 
-            tabPane.addTab(tabKey, title, panel);
+            tabPane.addTab(tabKey, title, panel, false);
             tabPane.selectTab(tabKey);
         } catch (IllegalStateException e) {
             AEGISLogger.log(AEGISLogger.AEGISLogKey.AEGIS_TOOL, AEGISLogger.AEGISLogLevel.SEVERE, "Failed to open temporary playground", e);
@@ -109,6 +109,35 @@ public class AEGISMainGui {
             alert.setHeaderText("Unable to open Temporary File Playground");
             alert.setContentText(e.getMessage());
             alert.showAndWait();
+        }
+    }
+
+    private void closeTemporaryPlayground(TemporaryFilePlaygroundSession session, String tabKey) {
+        try {
+            playgroundManager.closeSession(session.id());
+            tabPane.removeTab(tabKey);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            AEGISLogger.log(
+                    AEGISLogger.AEGISLogKey.AEGIS_TOOL,
+                    AEGISLogger.AEGISLogLevel.WARNING,
+                    "Failed to close temporary playground session " + session.id(),
+                    e
+            );
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setTitle("Temporary File Playground");
+            alert.setHeaderText("Unable to close Temporary File Playground");
+            alert.setContentText(
+                    e.getMessage() + "\n\n" +
+                            "Would you like to close this tab anyway?\n" +
+                            "Choosing Yes keeps files on disk for manual cleanup."
+            );
+            ButtonType closeTab = new ButtonType("Yes, Close Tab", ButtonBar.ButtonData.YES);
+            ButtonType keepOpen = new ButtonType("No, Keep Open", ButtonBar.ButtonData.NO);
+            alert.getButtonTypes().setAll(closeTab, keepOpen);
+
+            if(alert.showAndWait().orElse(keepOpen) == closeTab) {
+                tabPane.removeTab(tabKey);
+            }
         }
     }
 

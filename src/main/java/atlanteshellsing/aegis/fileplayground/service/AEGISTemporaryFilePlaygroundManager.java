@@ -127,6 +127,24 @@ public class AEGISTemporaryFilePlaygroundManager {
         }
     }
 
+    /**
+     * Closes and deletes a tracked Temporary File Playground session workspace.
+     *
+     * @param sessionId session ID
+     */
+    public synchronized void closeSession(UUID sessionId) {
+        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        Path workspacePath = session.workspacePath();
+
+        try {
+            deleteRecursively(workspacePath);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to delete playground workspace: " + workspacePath, e);
+        }
+
+        sessions.remove(sessionId);
+    }
+
     private Path validateSelectedPath(UUID sessionId, Path selectedPath, boolean mustBeFile) {
         TemporaryFilePlaygroundSession session = getSession(sessionId);
         Path workspacePath = session.workspacePath().toAbsolutePath().normalize();
@@ -350,6 +368,18 @@ public class AEGISTemporaryFilePlaygroundManager {
         }
 
         Files.copy(source, target, StandardCopyOption.COPY_ATTRIBUTES);
+    }
+
+    private void deleteRecursively(Path path) throws IOException {
+        if(Files.isDirectory(path)) {
+            try (DirectoryStream<Path> children = Files.newDirectoryStream(path)) {
+                for(Path child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+
+        Files.delete(path);
     }
 
     /**
