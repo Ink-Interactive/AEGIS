@@ -371,7 +371,7 @@ public class AEGISTemporaryFilePlaygroundManager {
     }
 
     private void deleteRecursively(Path path) throws IOException {
-        if(Files.isDirectory(path)) {
+        if(Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
             try (DirectoryStream<Path> children = Files.newDirectoryStream(path)) {
                 for(Path child : children) {
                     deleteRecursively(child);
