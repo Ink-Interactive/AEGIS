@@ -21,12 +21,25 @@ public class AEGISTabPane extends TabPane {
      * @param content The UI content for the tab.
      */
     public void addTab(String key, String title, Node content) {
+        addTab(key, title, content, true);
+    }
+
+    /**
+     * Adds a new tab to the pane and the registry.
+     *
+     * @param key       Unique key for this tab.
+     * @param title     Display title of the tab.
+     * @param content   The UI content for the tab.
+     * @param closable  whether this tab should be closable by the tab header close action
+     */
+    public void addTab(String key, String title, Node content, boolean closable) {
         if(containsTab(key)) {
             selectTab(key);
             return;
         }
 
         Tab tab = new Tab(title, content);
+        tab.setClosable(closable);
         tab.setOnClosed(e -> removeTab(key));
         getTabs().add(tab);
         tabRegistry.put(key, new TabInfo(key, tab, title, content));
