@@ -26,6 +26,16 @@ public record TemporaryFilePlaygroundSession(
         return state == TemporaryFilePlaygroundState.OPEN;
     }
 
+    public TemporaryFilePlaygroundSession asPendingCleanup() {
+        return new TemporaryFilePlaygroundSession(
+                id,
+                workspacePath,
+                createdAt,
+                TemporaryFilePlaygroundState.PENDING_CLEANUP
+        );
+    }
+
+
     public TemporaryFilePlaygroundSession asClosed() {
         return new TemporaryFilePlaygroundSession(
                 id,

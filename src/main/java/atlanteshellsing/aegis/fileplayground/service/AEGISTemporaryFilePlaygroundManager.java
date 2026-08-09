@@ -25,6 +25,7 @@ public class AEGISTemporaryFilePlaygroundManager {
     private final Path playgroundRoot;
     private final Map<UUID, TemporaryFilePlaygroundSession> sessions;
     private final PlaygroundOSIntegration osIntegration;
+    private final PlaygroundDeletion deletion;
 
     /**
      * Creates a manager using the provided playground root.
@@ -36,10 +37,15 @@ public class AEGISTemporaryFilePlaygroundManager {
     }
 
     public AEGISTemporaryFilePlaygroundManager(Path playgroundRoot, PlaygroundOSIntegration osIntegration) {
+        this(playgroundRoot, osIntegration, AEGISTemporaryFilePlaygroundManager::deletePathRecursively);
+    }
+
+    AEGISTemporaryFilePlaygroundManager(Path playgroundRoot, PlaygroundOSIntegration osIntegration, PlaygroundDeletion deletion) {
         this.playgroundRoot = Objects.requireNonNull(playgroundRoot, "playgroundRoot cannot be null")
                 .toAbsolutePath()
                 .normalize();
         this.osIntegration = Objects.requireNonNull(osIntegration, "osIntegration cannot be null");
+        this.deletion = Objects.requireNonNull(deletion, "deletion cannot be null");
         this.sessions = new LinkedHashMap<>();
     }
 
@@ -79,7 +85,7 @@ public class AEGISTemporaryFilePlaygroundManager {
      * @param sessionId session ID
      */
     public synchronized void openWorkspace(UUID sessionId) {
-        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        TemporaryFilePlaygroundSession session = getOpenSession(sessionId);
         Path workspacePath = session.workspacePath();
 
         if(!Files.isDirectory(workspacePath)) throw new IllegalStateException("Workspace path does not exist or is not a directory: " + workspacePath);
@@ -133,20 +139,25 @@ public class AEGISTemporaryFilePlaygroundManager {
      * @param sessionId session ID
      */
     public synchronized void closeSession(UUID sessionId) {
-        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        TemporaryFilePlaygroundSession session = getOpenSession(sessionId);
         Path workspacePath = session.workspacePath();
 
         try {
-            deleteRecursively(workspacePath);
+            deletion.delete(workspacePath);
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to delete playground workspace: " + workspacePath, e);
+            TemporaryFilePlaygroundSession pendingCleanup = session.asPendingCleanup();
+            sessions.put(sessionId, pendingCleanup);
+            throw new IllegalStateException(
+                    "Failed to delete playground workspace; session is pending cleanup: " + workspacePath,
+                    e
+            );
         }
 
         sessions.remove(sessionId);
     }
 
     private Path validateSelectedPath(UUID sessionId, Path selectedPath, boolean mustBeFile) {
-        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        TemporaryFilePlaygroundSession session = getOpenSession(sessionId);
         Path workspacePath = session.workspacePath().toAbsolutePath().normalize();
 
         if(selectedPath == null) throw new IllegalArgumentException("Selected path cannot be null");
@@ -176,6 +187,17 @@ public class AEGISTemporaryFilePlaygroundManager {
         return session;
     }
 
+    private TemporaryFilePlaygroundSession getOpenSession(UUID sessionId) {
+        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        if(!session.isOpen()) {
+            throw new IllegalStateException(
+                    "Temporary playground session is not open (state=" + session.state() + "): " + sessionId
+            );
+        }
+
+        return session;
+    }
+
     /**
      * Returns all sessions tracked during the current run.
      *
@@ -191,16 +213,25 @@ public class AEGISTemporaryFilePlaygroundManager {
      * @return unmodifiable snapshot of open sessions
      */
     public synchronized Map<UUID, TemporaryFilePlaygroundSession> getOpenSessions() {
+       return sessionsByState(TemporaryFilePlaygroundState.OPEN);
+    }
+
+    /**
+     * Returns all sessions whose workspaces could not be deleted and need later cleanup.
+     *
+     * @return unmodifiable snapshot of pending cleanup sessions
+     */
+    public synchronized Map<UUID, TemporaryFilePlaygroundSession> getPendingCleanupSessions() {
+        return sessionsByState(TemporaryFilePlaygroundState.PENDING_CLEANUP);
+    }
+
+    private Map<UUID, TemporaryFilePlaygroundSession> sessionsByState(TemporaryFilePlaygroundState state) {
         return Collections.unmodifiableMap(
                 sessions.entrySet()
                         .stream()
-                        .filter(entry -> entry.getValue().isOpen())
-                        .collect(Collectors.toMap(
-                                Map.Entry::getKey,
-                                Map.Entry::getValue,
-                                (e1, e2) -> e1,
-                                LinkedHashMap::new
-                        ))
+                        .filter(entry -> entry.getValue().state() == state)
+                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
+                                (e1, e2) -> e1, LinkedHashMap::new))
         );
     }
 
@@ -224,7 +255,7 @@ public class AEGISTemporaryFilePlaygroundManager {
      * @return created file path
      */
     public synchronized Path createFile(UUID sessionId, Path parentDirectory, String fileName) {
-        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        TemporaryFilePlaygroundSession session = getOpenSession(sessionId);
         Path targetDirectory = resolveTargetDirectory(session.workspacePath(), parentDirectory);
         String sanitizedName = validateChildName(targetDirectory, fileName, "File name");
         Path filePath = targetDirectory.resolve(sanitizedName).normalize();
@@ -256,7 +287,7 @@ public class AEGISTemporaryFilePlaygroundManager {
      * @return created folder path
      */
     public synchronized Path createFolder(UUID sessionId, Path parentDirectory, String folderName) {
-        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        TemporaryFilePlaygroundSession session = getOpenSession(sessionId);
         Path targetDirectory = resolveTargetDirectory(session.workspacePath(), parentDirectory);
         String sanitizedName = validateChildName(targetDirectory, folderName, "Folder name");
         Path folderPath = targetDirectory.resolve(sanitizedName).normalize();
@@ -275,7 +306,7 @@ public class AEGISTemporaryFilePlaygroundManager {
      * @param paths dropped files/folders to copy
      */
     public synchronized void importPaths(UUID sessionId, List<Path> paths) {
-        TemporaryFilePlaygroundSession session = getSession(sessionId);
+        TemporaryFilePlaygroundSession session = getOpenSession(sessionId);
 
         if(paths == null || paths.isEmpty()) {
             throw new IllegalArgumentException("No Files or Folders to import.");
@@ -370,11 +401,11 @@ public class AEGISTemporaryFilePlaygroundManager {
         Files.copy(source, target, StandardCopyOption.COPY_ATTRIBUTES);
     }
 
-    private void deleteRecursively(Path path) throws IOException {
+    private static void deletePathRecursively(Path path) throws IOException {
         if(Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
             try (DirectoryStream<Path> children = Files.newDirectoryStream(path)) {
                 for(Path child : children) {
-                    deleteRecursively(child);
+                    deletePathRecursively(child);
                 }
             }
         }
@@ -392,6 +423,10 @@ public class AEGISTemporaryFilePlaygroundManager {
 
     interface PlaygroundOSIntegration {
         void openPath(Path path) throws IOException;
+    }
+
+    interface PlaygroundDeletion {
+        void delete(Path path) throws IOException;
     }
 
     static class DesktopPlaygroundOSIntegration implements PlaygroundOSIntegration {

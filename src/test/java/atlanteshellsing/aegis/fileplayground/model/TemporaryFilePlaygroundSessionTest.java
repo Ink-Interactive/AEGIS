@@ -42,6 +42,37 @@ class TemporaryFilePlaygroundSessionTest {
     }
 
     @Test
+    void isOpenShouldReturnFalseWhenStateIsPendingCleanup() {
+        TemporaryFilePlaygroundSession session = new TemporaryFilePlaygroundSession(
+                UUID.randomUUID(),
+                tempDir.resolve("workspace"),
+                Instant.now(),
+                TemporaryFilePlaygroundState.PENDING_CLEANUP
+        );
+
+        assertFalse(session.isOpen());
+    }
+
+    @Test
+    void asPendingCleanupShouldReturnPendingCleanupCopy() {
+        TemporaryFilePlaygroundSession session = new TemporaryFilePlaygroundSession(
+                UUID.randomUUID(),
+                tempDir.resolve("workspace"),
+                Instant.now(),
+                TemporaryFilePlaygroundState.OPEN
+        );
+
+        TemporaryFilePlaygroundSession pendingCleanup = session.asPendingCleanup();
+
+        assertEquals(session.id(), pendingCleanup.id());
+        assertEquals(session.workspacePath(), pendingCleanup.workspacePath());
+        assertEquals(session.createdAt(), pendingCleanup.createdAt());
+        assertEquals(TemporaryFilePlaygroundState.PENDING_CLEANUP, pendingCleanup.state());
+        assertFalse(pendingCleanup.isOpen());
+    }
+
+
+    @Test
     void asClosedShouldReturnClosedCopy() {
         TemporaryFilePlaygroundSession session = new TemporaryFilePlaygroundSession(
                 UUID.randomUUID(),

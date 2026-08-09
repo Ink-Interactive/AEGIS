@@ -123,21 +123,18 @@ public class AEGISMainGui {
                     "Failed to close temporary playground session " + session.id(),
                     e
             );
-            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            Alert alert = new Alert(Alert.AlertType.WARNING);
             alert.setTitle("Temporary File Playground");
-            alert.setHeaderText("Unable to close Temporary File Playground");
+            alert.setHeaderText("Playground cleanup is pending");
             alert.setContentText(
                     e.getMessage() + "\n\n" +
-                            "Would you like to close this tab anyway?\n" +
-                            "Choosing Yes keeps files on disk for manual cleanup."
+                            "AEGIS could not delete the workspace right now. " +
+                            "The session has been marked for cleanup and is no longer treated as open. " +
+                            "Files may remain on disk until cleanup is retried or performed manually."
             );
-            ButtonType closeTab = new ButtonType("Yes, Close Tab", ButtonBar.ButtonData.YES);
-            ButtonType keepOpen = new ButtonType("No, Keep Open", ButtonBar.ButtonData.NO);
-            alert.getButtonTypes().setAll(closeTab, keepOpen);
 
-            if(alert.showAndWait().orElse(keepOpen) == closeTab) {
-                tabPane.removeTab(tabKey);
-            }
+            alert.showAndWait();
+            tabPane.removeTab(tabKey);
         }
     }
 
