@@ -13,11 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class AEGISTemporaryFilePlaygroundManagerTest {
 
@@ -35,6 +31,11 @@ class AEGISTemporaryFilePlaygroundManagerTest {
     private AEGISTemporaryFilePlaygroundManager createManager(
             AEGISTemporaryFilePlaygroundManager.PlaygroundOSIntegration osIntegration) {
         return new AEGISTemporaryFilePlaygroundManager(playgroundRoot(), osIntegration);
+    }
+
+    private AEGISTemporaryFilePlaygroundManager createManagerWithDeletion(
+            AEGISTemporaryFilePlaygroundManager.PlaygroundDeletion deletion) {
+        return new AEGISTemporaryFilePlaygroundManager(playgroundRoot(), new StubOsIntegration(), deletion);
     }
 
     @Nested
@@ -99,6 +100,7 @@ class AEGISTemporaryFilePlaygroundManagerTest {
 
             assertTrue(manager.getAllSessions().isEmpty());
             assertTrue(manager.getOpenSessions().isEmpty());
+            assertTrue(manager.getPendingCleanupSessions().isEmpty());
         }
 
         @Test
@@ -506,6 +508,7 @@ class AEGISTemporaryFilePlaygroundManagerTest {
 
             assertTrue(manager.getAllSessions().isEmpty());
             assertTrue(manager.getOpenSessions().isEmpty());
+            assertTrue(manager.getPendingCleanupSessions().isEmpty());
         }
 
         @Test
@@ -521,18 +524,76 @@ class AEGISTemporaryFilePlaygroundManagerTest {
         }
 
         @Test
-        void CloseSessionTest_004_closeSessionShouldLeaveSessionTrackedWhenDeletionFails() throws Exception {
-            AEGISTemporaryFilePlaygroundManager manager = createManager();
-            TemporaryFilePlaygroundSession session = manager.createSession();
-            assertTrue(Files.deleteIfExists(session.workspacePath()));
+        void CloseSessionTest_004_closeSessionShouldMarkSessionPendingCleanupWhenDeletionFails() {
+            AEGISTemporaryFilePlaygroundManager manager = createManagerWithDeletion(path -> {
+                throw new IOException("workspace is locked");
+            });
 
-            assertThrows(
+            TemporaryFilePlaygroundSession session = manager.createSession();
+
+            IllegalStateException exception = assertThrows(
                     IllegalStateException.class,
                     () -> manager.closeSession(session.id())
             );
 
+            assertEquals(
+                    "Failed to delete playground workspace; session is pending cleanup: " + session.workspacePath(),
+                    exception.getMessage()
+            );
+            assertEquals("workspace is locked", exception.getCause().getMessage());
+
+            TemporaryFilePlaygroundSession pendingCleanup = manager.getSession(session.id());
+            assertEquals(TemporaryFilePlaygroundState.PENDING_CLEANUP, pendingCleanup.state());
+            assertFalse(pendingCleanup.isOpen());
             assertEquals(1, manager.getAllSessions().size());
-            assertEquals(session, manager.getSession(session.id()));
+        }
+
+        @Test
+        void CloseSessionTest_005_pendingCleanupSessionShouldNotAppearInOpenSessions() {
+            AEGISTemporaryFilePlaygroundManager manager = createManagerWithDeletion(path -> {
+                throw new IOException("workspace is locked");
+            });
+            TemporaryFilePlaygroundSession session = manager.createSession();
+
+            assertThrows(IllegalStateException.class, () -> manager.closeSession(session.id()));
+
+            assertTrue(manager.getOpenSessions().isEmpty());
+            assertFalse(manager.getOpenSessions().containsKey(session.id()));
+        }
+
+        @Test
+        void CloseSessionTest_006_pendingCleanupSessionShouldAppearInPendingCleanupSessions() {
+            AEGISTemporaryFilePlaygroundManager manager = createManagerWithDeletion(path -> {
+                throw new IOException("workspace is locked");
+            });
+            TemporaryFilePlaygroundSession session = manager.createSession();
+
+            assertThrows(IllegalStateException.class, () -> manager.closeSession(session.id()));
+
+            assertEquals(1, manager.getPendingCleanupSessions().size());
+            assertEquals(
+                    TemporaryFilePlaygroundState.PENDING_CLEANUP,
+                    manager.getPendingCleanupSessions().get(session.id()).state()
+            );
+        }
+
+        @Test
+        void CloseSessionTest_007_closeSessionShouldRejectPendingCleanupSession() {
+            AEGISTemporaryFilePlaygroundManager manager = createManagerWithDeletion(path -> {
+                throw new IOException("workspace is locked");
+            });
+            TemporaryFilePlaygroundSession session = manager.createSession();
+            assertThrows(IllegalStateException.class, () -> manager.closeSession(session.id()));
+
+            IllegalStateException exception = assertThrows(
+                    IllegalStateException.class,
+                    () -> manager.closeSession(session.id())
+            );
+
+            assertEquals(
+                    "Temporary playground session is not open (state=PENDING_CLEANUP): " + session.id(),
+                    exception.getMessage()
+            );
         }
     }
 

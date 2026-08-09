@@ -8,5 +8,6 @@ import atlanteshellsing.aegis.annotations.ExcludeAsGenerated;
 @ExcludeAsGenerated
 public enum TemporaryFilePlaygroundState {
     OPEN,
+    PENDING_CLEANUP,
     CLOSED
 }
